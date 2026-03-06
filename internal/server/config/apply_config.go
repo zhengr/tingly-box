@@ -216,6 +216,39 @@ func InstallStatusLineScript() (scriptPath string, created bool, err error) {
 	return scriptPath, !fileExists, nil
 }
 
+// InstallNotifyScript installs the claude-notify.sh script to ~/.claude/
+// Returns the path to the installed script and whether it was newly created
+func InstallNotifyScript() (scriptPath string, created bool, err error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", false, fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	scriptPath = filepath.Join(homeDir, ".claude", "tingly-notify.sh")
+
+	// Read script from embedded assets
+	content, err := internal.ScriptAssets.ReadFile("script/claude-notify.sh")
+	if err != nil {
+		return "", false, fmt.Errorf("failed to read notify script from assets: %w", err)
+	}
+
+	// Ensure directory exists
+	if err := ensureDir(scriptPath); err != nil {
+		return "", false, fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	// Check if file exists
+	_, err = os.Stat(scriptPath)
+	fileExists := err == nil
+
+	// Write the script
+	if err := os.WriteFile(scriptPath, content, 0755); err != nil {
+		return "", false, fmt.Errorf("failed to write script: %w", err)
+	}
+
+	return scriptPath, !fileExists, nil
+}
+
 // ApplyClaudeOnboarding applies Claude onboarding configuration
 // It merges top-level keys, preserving existing keys not in payload
 func ApplyClaudeOnboarding(payload map[string]interface{}) (*ApplyResult, error) {
