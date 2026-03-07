@@ -3,12 +3,12 @@ name: NPX Package Publish from GitHub Release
 on:
   workflow_dispatch:
     inputs:
-      source_tag:
-        description: 'Source tag to use for release (e.g., v1.0.0)'
+      release_tag:
+        description: 'GitHub Release tag to download assets from (e.g., v1.0.0)'
         required: true
         type: string
       npx_version:
-        description: 'NPX Package version (defaults to tag version without v prefix)'
+        description: 'NPX Package version to publish (defaults to release tag version without v prefix)'
         required: false
         type: string
         default: ''
@@ -61,11 +61,11 @@ jobs:
       - name: Validate and extract version
         id: version
         run: |
-          SOURCE_TAG="${{ github.event.inputs.source_tag }}"
+          RELEASE_TAG="${{ github.event.inputs.release_tag }}"
           NPX_VERSION_INPUT="${{ github.event.inputs.npx_version }}"
 
           # Validate tag format
-          if [[ ! "$SOURCE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
             echo "Error: Invalid tag format. Expected format: v1.0.0 or v1.0.0-beta"
             exit 1
           fi
@@ -73,13 +73,19 @@ jobs:
           # Use provided version or extract from tag
           if [ -n "$NPX_VERSION_INPUT" ]; then
             NPX_VERSION="$NPX_VERSION_INPUT"
+            echo "📝 Using custom NPX version: $NPX_VERSION"
           else
-            NPX_VERSION="${SOURCE_TAG#v}"
+            NPX_VERSION="${RELEASE_TAG#v}"
+            echo "📝 Using version from release tag: $NPX_VERSION"
           fi
 
-          echo "release_tag=$SOURCE_TAG" >> $GITHUB_OUTPUT
+          echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
           echo "npx_version=$NPX_VERSION" >> $GITHUB_OUTPUT
-          echo "Source tag: $SOURCE_TAG, NPX version: $NPX_VERSION"
+          echo ""
+          echo "Summary:"
+          echo "  - Branch: ${{ github.ref_name }}"
+          echo "  - Release tag (assets source): $RELEASE_TAG"
+          echo "  - NPX version to publish: $NPX_VERSION"
 
       - name: Check if GitHub Release exists
         run: |
