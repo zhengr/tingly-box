@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/sirupsen/logrus"
 
@@ -38,13 +39,12 @@ func (h *BotHandler) handleResumeCommand(hCtx HandlerContext) {
 	// Collect sessions from current project first (if set)
 	var allSessions []sessionWithProject
 	if currentProject != "" {
-		sessions, err := store.GetRecentSessionsFiltered(ctx, currentProject, 3, filter)
+		sessions, err := store.GetRecentSessionsFiltered(ctx, currentProject, 5, filter)
 		if err == nil && len(sessions) > 0 {
 			for _, s := range sessions {
 				allSessions = append(allSessions, sessionWithProject{
-					Session:   s,
-					Project:   currentProject,
-					IsCurrent: true,
+					Session: s,
+					Project: currentProject,
 				})
 			}
 		}
@@ -64,19 +64,9 @@ func (h *BotHandler) handleResumeCommand(hCtx HandlerContext) {
 
 	for i, item := range allSessions {
 		sess := item.Session
-		isCurrent := ""
-		if item.IsCurrent {
-			isCurrent = "📍 "
-		}
-
-		// Format: [index] Session ID (status)
-		status := "✅"
-		if sess.Status != "complete" {
-			status = "⚠️"
-		}
 
 		// Truncate first message
-		firstMsg := truncateString(sess.FirstMessage, 50)
+		firstMsg := truncateString(sess.FirstMessage, 60)
 		if firstMsg == "" {
 			firstMsg = "(empty)"
 		}
@@ -87,10 +77,20 @@ func (h *BotHandler) handleResumeCommand(hCtx HandlerContext) {
 		// Show project name (last component of path)
 		projectName := formatProjectName(item.Project)
 
-		msg.WriteString(fmt.Sprintf("%d. %s%s`%s` • %s\n", i+1, isCurrent, status,
-			shortSessionID(sess.SessionID), projectName))
+		msg.WriteString(fmt.Sprintf("%d. %s • %s\n", i+1, projectName, timeAgo))
 		msg.WriteString(fmt.Sprintf("   %s\n", firstMsg))
-		msg.WriteString(fmt.Sprintf("   %s • %d turns\n\n", timeAgo, sess.NumTurns))
+
+		// Show last message (user or assistant) if different from first
+		lastMsg := sess.LastUserMessage
+		if lastMsg == "" {
+			lastMsg = sess.LastAssistantMessage
+		}
+		if lastMsg != "" && lastMsg != sess.FirstMessage {
+			lastMsg = truncateString(lastMsg, 60)
+			msg.WriteString(fmt.Sprintf("   ─ %s\n", lastMsg))
+		}
+
+		msg.WriteString("\n")
 	}
 
 	msg.WriteString("Reply with the number to resume a session.")
@@ -107,8 +107,8 @@ func (h *BotHandler) handleResumeSelection(hCtx HandlerContext, selectionStr str
 		return false
 	}
 
-	// Parse selection (expecting a single digit 1-5)
-	if len(selection) != 1 || selection[0] < '1' || selection[0] > '5' {
+	// Parse selection (expecting a single digit 1-9)
+	if len(selection) != 1 || selection[0] < '1' || selection[0] > '9' {
 		return false
 	}
 
@@ -145,12 +145,15 @@ func (h *BotHandler) handleResumeSelection(hCtx HandlerContext, selectionStr str
 	// Build confirmation message
 	var msg strings.Builder
 	msg.WriteString("✅ *Resumed session*\n\n")
-	msg.WriteString(fmt.Sprintf("Session: `%s`\n", shortSessionID(selectedSession.SessionID)))
 
-	// Show last user message for context
-	if selectedSession.LastUserMessage != "" {
-		lastMsg := truncateString(selectedSession.LastUserMessage, 80)
-		msg.WriteString(fmt.Sprintf("\nLast message: %s\n", lastMsg))
+	// Show last message for context (prefer user, fallback to assistant)
+	lastMsg := selectedSession.LastAssistantMessage
+	if lastMsg == "" {
+		lastMsg = selectedSession.LastUserMessage
+	}
+	if lastMsg != "" {
+		lastMsg = truncateString(lastMsg, 80)
+		msg.WriteString(fmt.Sprintf("Last message: %s\n", lastMsg))
 	}
 
 	msg.WriteString("\nYou can continue your conversation.")
@@ -169,32 +172,28 @@ func (h *BotHandler) handleResumeSelection(hCtx HandlerContext, selectionStr str
 
 // sessionWithProject wraps a session with its project context
 type sessionWithProject struct {
-	Session   session.SessionMetadata
-	Project   string
-	IsCurrent bool
+	Session session.SessionMetadata
+	Project string
 }
 
-// shortSessionID returns a shortened version of the session ID
-func shortSessionID(id string) string {
-	if len(id) <= 12 {
-		return id
-	}
-	return id[:8] + "..."
-}
-
-// truncateString truncates a string to max length with ellipsis
+// truncateString truncates a string to max length (in runes, not bytes) with ellipsis
 func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	// Count runes (UTF-8 characters) instead of bytes
+	runeCount := utf8.RuneCountInString(s)
+	if runeCount <= maxLen {
 		return s
 	}
-	// Try to truncate at a word boundary
-	if maxLen > 3 {
-		truncated := s[:maxLen-3]
-		if lastSpace := strings.LastIndexAny(truncated, " \t\n"); lastSpace > maxLen/2 {
-			return s[:lastSpace] + "..."
-		}
+	// Truncate at rune boundary
+	runes := []rune(s)
+	if maxLen <= 3 {
+		return string(runes[:maxLen])
 	}
-	return s[:maxLen-3] + "..."
+	// Try to truncate at a word boundary
+	truncated := string(runes[:maxLen-3])
+	if lastSpace := strings.LastIndexAny(truncated, " \t\n"); lastSpace > maxLen/2 {
+		return s[:lastSpace] + "..."
+	}
+	return truncated + "..."
 }
 
 // formatTimeAgo returns a human-readable time ago string
