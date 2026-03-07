@@ -455,9 +455,16 @@ jobs:
 
           echo "✅ Downloaded zip files:"
           ls -lh "$PKG_DIR/zip/"
-          
-          # No GUI
+
+          # Remove unwanted packages to reduce size
+          # We exclude: GUI packages, linux arm64, macos amd64
+          echo "🗑️ Removing unwanted packages..."
           rm -rf "$PKG_DIR"/zip/tingly-box-gui-*.zip
+          rm -f "$PKG_DIR"/zip/tingly-box-linux-arm64.zip
+          rm -f "$PKG_DIR"/zip/tingly-box-macos-amd64.zip
+
+          echo "✅ Remaining zip files after cleanup:"
+          ls -lh "$PKG_DIR/zip/"
 
       - name: Verify bundle structure
         run: |
