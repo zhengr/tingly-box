@@ -79,21 +79,6 @@ func (UsageMonthlyRecord) TableName() string {
 	return "usage_monthly"
 }
 
-// OTelTokenDelta stores token totals exported from OTel as incremental deltas.
-type OTelTokenDelta struct {
-	ID           uint      `gorm:"primaryKey;autoIncrement;column:id"`
-	Timestamp    time.Time `gorm:"column:timestamp;index:idx_otel_ts;not null"`
-	ProviderUUID string    `gorm:"column:provider_uuid;index:idx_otel_dims"`
-	ProviderName string    `gorm:"column:provider_name"`
-	Scenario     string    `gorm:"column:scenario;index:idx_otel_dims"`
-	Status       string    `gorm:"column:status;index:idx_otel_dims"`
-	UserTier     string    `gorm:"column:user_tier;index:idx_otel_dims"`
-	DeltaTokens  int64     `gorm:"column:delta_tokens;not null"`
-}
-
-func (OTelTokenDelta) TableName() string {
-	return "otel_token_deltas"
-}
 
 // UsageStore persists usage records in SQLite using GORM.
 type UsageStore struct {
@@ -126,7 +111,7 @@ func NewUsageStore(baseDir string) (*UsageStore, error) {
 	}
 
 	// Auto-migrate schema for all usage-related tables
-	if err := db.AutoMigrate(&UsageRecord{}, &UsageDailyRecord{}, &UsageMonthlyRecord{}, &OTelTokenDelta{}); err != nil {
+	if err := db.AutoMigrate(&UsageRecord{}, &UsageDailyRecord{}, &UsageMonthlyRecord{}); err != nil {
 		return nil, fmt.Errorf("failed to migrate usage database: %w", err)
 	}
 	if err := ensureUsageRecordSchema(db); err != nil {
@@ -137,38 +122,6 @@ func NewUsageStore(baseDir string) (*UsageStore, error) {
 	return store, nil
 }
 
-func (us *UsageStore) RecordOTelTokenDelta(delta *OTelTokenDelta) error {
-	if delta == nil {
-		return errors.New("delta cannot be nil")
-	}
-	if delta.Timestamp.IsZero() {
-		delta.Timestamp = time.Now()
-	}
-	us.mu.Lock()
-	defer us.mu.Unlock()
-	return us.db.Create(delta).Error
-}
-
-func (us *UsageStore) SumOTelTokenDeltas(startTime, endTime time.Time, filters map[string]string) (int64, error) {
-	us.mu.Lock()
-	defer us.mu.Unlock()
-
-	query := us.db.Model(&OTelTokenDelta{})
-	if !startTime.IsZero() {
-		query = query.Where("timestamp >= ?", startTime)
-	}
-	if !endTime.IsZero() {
-		query = query.Where("timestamp <= ?", endTime)
-	}
-	for key, value := range filters {
-		query = query.Where(key+" = ?", value)
-	}
-	var total int64
-	if err := query.Select("COALESCE(SUM(delta_tokens), 0)").Scan(&total).Error; err != nil {
-		return 0, err
-	}
-	return total, nil
-}
 
 func ensureUsageRecordSchema(db *gorm.DB) error {
 	// Dev-stage breaking cleanup: remove deprecated department_id dimension.

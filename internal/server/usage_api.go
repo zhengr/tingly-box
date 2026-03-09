@@ -238,13 +238,6 @@ func (s *Server) RegisterUsageRoutes(manager *swagger.RouteManager) {
 		),
 	)
 
-	// GET /api/v1/usage/otel/summary - Get OTel token total summary.
-	apiV1.GET("/usage/otel/summary", usageAPI.GetOTelSummary,
-		swagger.WithTags("usage"),
-		swagger.WithDescription("Returns OTel-exported token totals (delta-summed) for reconciliation"),
-		swagger.WithResponseModel(gin.H{}),
-	)
-
 	// DELETE /api/v1/usage/records - Delete old usage records
 	apiV1.DELETE("/usage/records", usageAPI.DeleteOldRecords,
 		swagger.WithTags("usage"),
@@ -474,42 +467,6 @@ func (api *UsageAPI) DeleteOldRecords(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, response)
-}
-
-func (api *UsageAPI) GetOTelSummary(c *gin.Context) {
-	if api.usageStore == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Usage store not available"})
-		return
-	}
-
-	startTime := parseTimeQuery(c, "start_time", time.Now().Add(-24*time.Hour))
-	endTime := parseTimeQuery(c, "end_time", time.Now())
-	filters := map[string]string{}
-	if provider := c.Query("provider_uuid"); provider != "" {
-		filters["provider_uuid"] = provider
-	}
-	if scenario := c.Query("scenario"); scenario != "" {
-		filters["scenario"] = scenario
-	}
-	if status := c.Query("status"); status != "" {
-		filters["status"] = status
-	}
-	if userTier := c.Query("user_tier"); userTier != "" {
-		filters["user_tier"] = userTier
-	}
-
-	total, err := api.usageStore.SumOTelTokenDeltas(startTime, endTime, filters)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"start_time":   startTime.Format(time.RFC3339),
-		"end_time":     endTime.Format(time.RFC3339),
-		"total_tokens": total,
-		"filters":      filters,
-	})
 }
 
 // Helper functions
