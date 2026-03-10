@@ -62,7 +62,7 @@ func NewTinglyBoxAgent(config *AgentConfig) (*TinglyBoxAgent, error) {
 		defaultRule, err := config.TBClient.GetDefaultRule(ctx)
 		if err != nil {
 			logrus.WithError(err).Warn("Failed to get default service from TB Client, falling back to config")
-
+			return nil, fmt.Errorf("failed to get default service from TB Client")
 		} else {
 			// Use TB Client configuration
 			modelConfig = &anthropic.Config{
@@ -75,6 +75,10 @@ func NewTinglyBoxAgent(config *AgentConfig) (*TinglyBoxAgent, error) {
 				"base_url": connection.BaseURL,
 			}).Info("Using TB Client configuration for smartguide agent")
 		}
+	}
+
+	if modelConfig == nil {
+		return nil, fmt.Errorf("no model configuration found")
 	}
 
 	// Validate model configuration
