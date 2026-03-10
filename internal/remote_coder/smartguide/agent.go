@@ -66,9 +66,9 @@ func NewTinglyBoxAgent(config *AgentConfig) (*TinglyBoxAgent, error) {
 		} else {
 			// Use TB Client configuration
 			modelConfig = &anthropic.Config{
-				ModelName: defaultRule.RequestModel,
-				APIKey:    connection.APIKey,
-				BaseURL:   connection.BaseURL,
+				Model:   defaultRule.RequestModel,
+				APIKey:  connection.APIKey,
+				BaseURL: connection.BaseURL,
 			}
 			logrus.WithFields(logrus.Fields{
 				"model":    defaultRule.RequestModel,
@@ -82,7 +82,10 @@ func NewTinglyBoxAgent(config *AgentConfig) (*TinglyBoxAgent, error) {
 		return nil, fmt.Errorf("model configuration failed: no API key available from TB Client or config")
 	}
 
-	modelClient := anthropic.NewClient(modelConfig)
+	modelClient, err := anthropic.NewClient(modelConfig)
+	if err != nil {
+		return nil, err
+	}
 
 	// Create toolkit
 	toolkit := tool.NewToolkit()
