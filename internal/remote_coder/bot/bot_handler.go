@@ -20,6 +20,7 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/remote_coder/session"
 	"github.com/tingly-dev/tingly-box/internal/remote_coder/smartguide"
 	"github.com/tingly-dev/tingly-box/internal/remote_coder/summarizer"
+	"github.com/tingly-dev/tingly-box/internal/tbclient"
 )
 
 // BotHandler encapsulates all bot message handling logic and dependencies
@@ -35,6 +36,7 @@ type BotHandler struct {
 	imPrompter       *IMPrompter
 	fileStore        *FileStore
 	interaction      *imbot.InteractionHandler // New interaction handler
+	tbClient         tbclient.TBClient          // TB Client for model configuration
 
 	// Smart guide agent (@tb)
 	smartGuideAgent  *smartguide.TinglyBoxAgent
@@ -85,6 +87,7 @@ func NewBotHandler(
 	summaryEngine *summarizer.Engine,
 	directoryBrowser *DirectoryBrowser,
 	manager *imbot.Manager,
+	tbClient tbclient.TBClient,
 ) *BotHandler {
 	// Create IM prompter for permission requests
 	imPrompter := NewIMPrompter(manager)
@@ -119,6 +122,7 @@ func NewBotHandler(
 		imPrompter:          imPrompter,
 		fileStore:           fileStore,
 		interaction:         interactionHandler,
+		tbClient:            tbClient,
 		handoffManager:      handoffMgr,
 		runningCancel:       make(map[string]context.CancelFunc),
 		pendingBinds:        make(map[string]*PendingBind),
@@ -367,18 +371,12 @@ func (h *BotHandler) getProjectPathForChat(hCtx HandlerContext) (string, bool, e
 func (h *BotHandler) handleSmartGuideMessage(hCtx HandlerContext, text string) error {
 	// Lazy initialization of smart guide agent
 	if h.smartGuideAgent == nil {
-		// Get API key from environment
-		apiKey := os.Getenv("ANTHROPIC_API_KEY")
-		if apiKey == "" {
-			h.SendText(hCtx, "⚠️ Smart Guide is not configured. ANTHROPIC_API_KEY not set.")
-			return nil
-		}
+		logrus.Info("Initializing smart guide agent with TB Client")
 
-		// Create agent factory
+		// Create agent factory with TB Client
 		factory := smartguide.NewAgentFactory(
 			smartguide.LoadSmartGuideConfig(),
-			apiKey,
-			"", // base URL from env if needed
+			h.tbClient, // Pass TB Client (may be nil, will use fallback)
 		)
 
 		// Create agent with callback functions
@@ -414,7 +412,7 @@ func (h *BotHandler) handleSmartGuideMessage(hCtx HandlerContext, text string) e
 		}
 
 		h.smartGuideAgent = agent
-		logrus.Info("Smart guide agent initialized")
+		logrus.Info("Smart guide agent initialized successfully")
 	}
 
 	// Get project path for context

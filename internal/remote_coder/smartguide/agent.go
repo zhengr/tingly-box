@@ -10,6 +10,7 @@ import (
 	"github.com/tingly-dev/tingly-agentscope/pkg/message"
 	"github.com/tingly-dev/tingly-agentscope/pkg/model/anthropic"
 	"github.com/tingly-dev/tingly-agentscope/pkg/tool"
+	"github.com/tingly-dev/tingly-box/internal/tbclient"
 )
 
 // TinglyBoxAgent is the smart guide agent (@tb)
@@ -23,8 +24,7 @@ type TinglyBoxAgent struct {
 // AgentConfig holds the configuration for creating a TinglyBoxAgent
 type AgentConfig struct {
 	SmartGuideConfig *SmartGuideConfig
-	APIKey           string
-	BaseURL          string
+	TBClient         tbclient.TBClient // TB Client for getting model configuration
 	ToolExecutor     *ToolExecutor
 	// Callback functions for internal tools
 	GetStatusFunc  func(chatID string) (*StatusInfo, error)
@@ -46,6 +46,70 @@ func NewTinglyBoxAgent(config *AgentConfig) (*TinglyBoxAgent, error) {
 		executor = NewToolExecutor([]string{"cd", "ls", "pwd"})
 	}
 
+	// Get model configuration from TB Client
+	var modelConfig *anthropic.Config
+	var err error
+
+	if config.TBClient != nil {
+		// Use TB Client to get default service configuration
+		ctx := context.Background()
+		defaultSvc, err := config.TBClient.GetDefaultService(ctx)
+		if err != nil {
+			logrus.WithError(err).Warn("Failed to get default service from TB Client, falling back to config")
+			// Fall back to configuration-based setup
+		} else {
+			// Use TB Client configuration
+			modelConfig = &anthropic.Config{
+				ModelName: defaultSvc.ModelID,
+				APIKey:    defaultSvc.APIKey,
+				BaseURL:   defaultSvc.BaseURL,
+			}
+			logrus.WithFields(logrus.Fields{
+				"provider": defaultSvc.ProviderName,
+				"model":    defaultSvc.ModelID,
+				"base_url": defaultSvc.BaseURL,
+			}).Info("Using TB Client configuration for smartguide agent")
+		}
+	}
+
+	// Fallback to configuration-based setup if TB Client failed or not provided
+	if modelConfig == nil && err == nil {
+		// Try to get connection config from TB Client
+		if config.TBClient != nil {
+			ctx := context.Background()
+			connCfg, connErr := config.TBClient.GetConnectionConfig(ctx)
+			if connErr == nil {
+				modelConfig = &anthropic.Config{
+					ModelName: config.SmartGuideConfig.Model.Model,
+					APIKey:    connCfg.APIKey,
+					BaseURL:   connCfg.BaseURL,
+				}
+				logrus.WithField("model", config.SmartGuideConfig.Model.Model).
+					Info("Using TB Client connection config for smartguide agent")
+			}
+		}
+	}
+
+	// Final fallback to direct configuration
+	if modelConfig == nil {
+		modelConfig = &anthropic.Config{
+			ModelName: config.SmartGuideConfig.Model.Model,
+			APIKey:    config.SmartGuideConfig.Model.APIKey,
+		}
+		if config.SmartGuideConfig.Model.BaseURL != "" {
+			modelConfig.BaseURL = config.SmartGuideConfig.Model.BaseURL
+		}
+		logrus.WithField("model", config.SmartGuideConfig.Model.Model).
+			Warn("Using direct configuration for smartguide agent (TB Client not available or failed)")
+	}
+
+	// Validate model configuration
+	if modelConfig.APIKey == "" {
+		return nil, fmt.Errorf("model configuration failed: no API key available from TB Client or config")
+	}
+
+	modelClient := anthropic.NewClient(modelConfig)
+
 	// Create toolkit
 	toolkit := tool.NewToolkit()
 
@@ -53,18 +117,6 @@ func NewTinglyBoxAgent(config *AgentConfig) (*TinglyBoxAgent, error) {
 	if err := RegisterTools(toolkit, executor, config.GetStatusFunc, config.GetProjectFunc); err != nil {
 		return nil, fmt.Errorf("failed to register tools: %w", err)
 	}
-
-	// Create model client
-	modelConfig := &anthropic.Config{
-		ModelName: config.SmartGuideConfig.Model.Model,
-		APIKey:    config.APIKey,
-	}
-
-	if config.BaseURL != "" {
-		modelConfig.BaseURL = config.BaseURL
-	}
-
-	modelClient := anthropic.NewClient(modelConfig)
 
 	// Create memory
 	mem := memory.NewHistory(100)
@@ -141,17 +193,15 @@ func (a *TinglyBoxAgent) GetConfig() *SmartGuideConfig {
 
 // AgentFactory creates TinglyBoxAgent instances
 type AgentFactory struct {
-	config *SmartGuideConfig
-	apiKey string
-	baseURL string
+	config   *SmartGuideConfig
+	tbClient tbclient.TBClient
 }
 
 // NewAgentFactory creates a new agent factory
-func NewAgentFactory(config *SmartGuideConfig, apiKey, baseURL string) *AgentFactory {
+func NewAgentFactory(config *SmartGuideConfig, tbClient tbclient.TBClient) *AgentFactory {
 	return &AgentFactory{
-		config:  config,
-		apiKey:  apiKey,
-		baseURL: baseURL,
+		config:   config,
+		tbClient: tbClient,
 	}
 }
 
@@ -161,8 +211,7 @@ func (f *AgentFactory) CreateAgent(getStatusFunc func(chatID string) (*StatusInf
 
 	return NewTinglyBoxAgent(&AgentConfig{
 		SmartGuideConfig: f.config,
-		APIKey:           f.apiKey,
-		BaseURL:          f.baseURL,
+		TBClient:         f.tbClient,
 		GetStatusFunc:    getStatusFunc,
 		GetProjectFunc:   getProjectFunc,
 	})

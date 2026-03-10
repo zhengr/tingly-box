@@ -176,7 +176,9 @@ func runBotWithSettings(ctx context.Context, setting BotSetting, dbPath string, 
 	}
 
 	// Register unified message handler with platform parameter
-	handler := NewBotHandler(ctx, setting, store.ChatStore(), sessionMgr, agentBoot, summaryEngine, directoryBrowser, manager)
+	// Note: TB Client is not available in bot_core, pass nil for now
+	// The smartguide will fall back to environment variables
+	handler := NewBotHandler(ctx, setting, store.ChatStore(), sessionMgr, agentBoot, summaryEngine, directoryBrowser, manager, nil)
 	manager.OnMessage(handler.HandleMessage)
 
 	if err := manager.Start(ctx); err != nil {
