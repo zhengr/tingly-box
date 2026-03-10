@@ -2,6 +2,9 @@ package bot
 
 import (
 	"fmt"
+	"time"
+
+	"github.com/tingly-dev/tingly-box/pkg/jsonstore"
 )
 
 // ChatStoreInterface defines the interface for chat persistence
@@ -79,7 +82,7 @@ var _ ChatStoreInterface = (*ChatStoreJSON)(nil)
 // ChatStoreJSON handles unified chat persistence using JSON file storage
 // This is the new implementation replacing the SQLite-based ChatStore
 type ChatStoreJSON struct {
-	store *JSONStore
+	store *jsonstore.Store[Chat]
 }
 
 // NewChatStoreJSON creates a new JSON-based chat store
@@ -88,7 +91,7 @@ func NewChatStoreJSON(filePath string) (*ChatStoreJSON, error) {
 		return nil, fmt.Errorf("file path is required")
 	}
 
-	store, err := NewJSONStore(filePath)
+	store, err := jsonstore.New[Chat](filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create JSON store: %w", err)
 	}
@@ -109,7 +112,7 @@ func (s *ChatStoreJSON) GetChat(chatID string) (*Chat, error) {
 	if s == nil || s.store == nil {
 		return nil, nil
 	}
-	return s.store.GetChat(chatID)
+	return s.store.Get(chatID), nil
 }
 
 // GetOrCreateChat gets a chat or creates it if not exists
@@ -117,7 +120,25 @@ func (s *ChatStoreJSON) GetOrCreateChat(chatID, platform string) (*Chat, error) 
 	if s == nil || s.store == nil {
 		return nil, fmt.Errorf("chat store is not initialized")
 	}
-	return s.store.GetOrCreateChat(chatID, platform)
+
+	if chat := s.store.Get(chatID); chat != nil {
+		return chat, nil
+	}
+
+	// Create new chat
+	now := time.Now().UTC()
+	newChat := &Chat{
+		ChatID:    chatID,
+		Platform:  platform,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	if err := s.UpsertChat(newChat); err != nil {
+		return nil, err
+	}
+
+	return newChat, nil
 }
 
 // UpsertChat creates or updates a chat
@@ -125,7 +146,22 @@ func (s *ChatStoreJSON) UpsertChat(chat *Chat) error {
 	if s == nil || s.store == nil {
 		return fmt.Errorf("chat store is not initialized")
 	}
-	return s.store.UpsertChat(chat)
+	if chat == nil || chat.ChatID == "" {
+		return fmt.Errorf("chat_id is required")
+	}
+
+	now := time.Now().UTC()
+	if chat.CreatedAt.IsZero() {
+		chat.CreatedAt = now
+	}
+	chat.UpdatedAt = now
+
+	// Set default agent if not specified
+	if chat.CurrentAgent == "" {
+		chat.CurrentAgent = "claude"
+	}
+
+	return s.store.Set(chat.ChatID, chat)
 }
 
 // UpdateChat updates specific fields of a chat
@@ -133,7 +169,19 @@ func (s *ChatStoreJSON) UpdateChat(chatID string, fn func(*Chat)) error {
 	if s == nil || s.store == nil {
 		return fmt.Errorf("chat store is not initialized")
 	}
-	return s.store.UpdateChat(chatID, fn)
+	if fn == nil {
+		return fmt.Errorf("update function is required")
+	}
+
+	return s.store.Update(chatID, func(chat *Chat) *Chat {
+		if chat == nil {
+			return nil
+		}
+		// Update timestamp
+		chat.UpdatedAt = time.Now().UTC()
+		fn(chat)
+		return chat
+	})
 }
 
 // ============== Project Binding ==============
@@ -143,7 +191,27 @@ func (s *ChatStoreJSON) BindProject(chatID, platform, projectPath, ownerID strin
 	if s == nil || s.store == nil {
 		return fmt.Errorf("chat store is not initialized")
 	}
-	return s.store.BindProject(chatID, platform, projectPath, ownerID)
+
+	chat := s.store.Get(chatID)
+	if chat == nil {
+		// Create new chat
+		now := time.Now().UTC()
+		chat = &Chat{
+			ChatID:      chatID,
+			Platform:    platform,
+			ProjectPath: projectPath,
+			OwnerID:     ownerID,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		}
+		return s.UpsertChat(chat)
+	}
+	// Update existing chat
+	chat.Platform = platform
+	chat.ProjectPath = projectPath
+	chat.OwnerID = ownerID
+	chat.UpdatedAt = time.Now().UTC()
+	return s.store.Set(chatID, chat)
 }
 
 // GetProjectPath retrieves the project path for a chat
@@ -151,7 +219,11 @@ func (s *ChatStoreJSON) GetProjectPath(chatID string) (string, bool, error) {
 	if s == nil || s.store == nil {
 		return "", false, nil
 	}
-	return s.store.GetProjectPath(chatID)
+	chat := s.store.Get(chatID)
+	if chat == nil || chat.ProjectPath == "" {
+		return "", false, nil
+	}
+	return chat.ProjectPath, true, nil
 }
 
 // ListChatsByOwner lists all chats owned by a user
@@ -159,7 +231,16 @@ func (s *ChatStoreJSON) ListChatsByOwner(ownerID, platform string) ([]*Chat, err
 	if s == nil || s.store == nil {
 		return nil, nil
 	}
-	return s.store.ListChatsByOwner(ownerID, platform)
+
+	items := s.store.List()
+	var chats []*Chat
+	for _, chat := range items {
+		if chat.OwnerID == ownerID && chat.Platform == platform && chat.ProjectPath != "" {
+			chats = append(chats, chat)
+		}
+	}
+
+	return chats, nil
 }
 
 // ============== Session Mapping ==============
@@ -169,7 +250,23 @@ func (s *ChatStoreJSON) SetSession(chatID, sessionID string) error {
 	if s == nil || s.store == nil {
 		return fmt.Errorf("chat store is not initialized")
 	}
-	return s.store.SetSession(chatID, sessionID)
+
+	chat := s.store.Get(chatID)
+	if chat == nil {
+		// Create new chat
+		now := time.Now().UTC()
+		chat = &Chat{
+			ChatID:    chatID,
+			Platform:  "telegram", // default platform
+			SessionID: sessionID,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		return s.UpsertChat(chat)
+	}
+	chat.SessionID = sessionID
+	chat.UpdatedAt = time.Now().UTC()
+	return s.store.Set(chatID, chat)
 }
 
 // GetSession retrieves the session for a chat
@@ -177,25 +274,31 @@ func (s *ChatStoreJSON) GetSession(chatID string) (string, bool, error) {
 	if s == nil || s.store == nil {
 		return "", false, nil
 	}
-	return s.store.GetSession(chatID)
+	chat := s.store.Get(chatID)
+	if chat == nil || chat.SessionID == "" {
+		return "", false, nil
+	}
+	return chat.SessionID, true, nil
 }
 
 // ============== Whitelist ==============
 
 // AddToWhitelist adds a chat to the whitelist
 func (s *ChatStoreJSON) AddToWhitelist(chatID, platform, addedBy string) error {
-	if s == nil || s.store == nil {
-		return fmt.Errorf("chat store is not initialized")
+	chat, err := s.GetOrCreateChat(chatID, platform)
+	if err != nil {
+		return err
 	}
-	return s.store.AddToWhitelist(chatID, platform, addedBy)
+	chat.IsWhitelisted = true
+	chat.WhitelistedBy = addedBy
+	return s.UpsertChat(chat)
 }
 
 // RemoveFromWhitelist removes a chat from the whitelist
 func (s *ChatStoreJSON) RemoveFromWhitelist(chatID string) error {
-	if s == nil || s.store == nil {
-		return fmt.Errorf("chat store is not initialized")
-	}
-	return s.store.RemoveFromWhitelist(chatID)
+	return s.UpdateChat(chatID, func(chat *Chat) {
+		chat.IsWhitelisted = false
+	})
 }
 
 // IsWhitelisted checks if a chat is whitelisted
@@ -203,17 +306,20 @@ func (s *ChatStoreJSON) IsWhitelisted(chatID string) bool {
 	if s == nil || s.store == nil {
 		return false
 	}
-	return s.store.IsWhitelisted(chatID)
+	chat := s.store.Get(chatID)
+	if chat == nil {
+		return false
+	}
+	return chat.IsWhitelisted
 }
 
 // ============== Bash CWD ==============
 
 // SetBashCwd sets the bash working directory for a chat
 func (s *ChatStoreJSON) SetBashCwd(chatID, cwd string) error {
-	if s == nil || s.store == nil {
-		return fmt.Errorf("chat store is not initialized")
-	}
-	return s.store.SetBashCwd(chatID, cwd)
+	return s.UpdateChat(chatID, func(chat *Chat) {
+		chat.BashCwd = cwd
+	})
 }
 
 // GetBashCwd retrieves the bash working directory for a chat
@@ -221,17 +327,20 @@ func (s *ChatStoreJSON) GetBashCwd(chatID string) (string, bool, error) {
 	if s == nil || s.store == nil {
 		return "", false, nil
 	}
-	return s.store.GetBashCwd(chatID)
+	chat := s.store.Get(chatID)
+	if chat == nil || chat.BashCwd == "" {
+		return "", false, nil
+	}
+	return chat.BashCwd, true, nil
 }
 
 // ============== Current Agent ==============
 
 // SetCurrentAgent sets the current agent for a chat
 func (s *ChatStoreJSON) SetCurrentAgent(chatID, agentType string) error {
-	if s == nil || s.store == nil {
-		return fmt.Errorf("chat store is not initialized")
-	}
-	return s.store.SetCurrentAgent(chatID, agentType)
+	return s.UpdateChat(chatID, func(chat *Chat) {
+		chat.CurrentAgent = agentType
+	})
 }
 
 // GetCurrentAgent retrieves the current agent for a chat
@@ -240,15 +349,21 @@ func (s *ChatStoreJSON) GetCurrentAgent(chatID string) (string, error) {
 	if s == nil || s.store == nil {
 		return "claude", nil
 	}
-	return s.store.GetCurrentAgent(chatID)
+	chat := s.store.Get(chatID)
+	if chat == nil {
+		return "claude", nil // Default to Claude Code
+	}
+	if chat.CurrentAgent == "" {
+		return "claude", nil // Default to Claude Code
+	}
+	return chat.CurrentAgent, nil
 }
 
 // SetAgentState sets the agent-specific state for a chat
 func (s *ChatStoreJSON) SetAgentState(chatID string, state []byte) error {
-	if s == nil || s.store == nil {
-		return fmt.Errorf("chat store is not initialized")
-	}
-	return s.store.SetAgentState(chatID, state)
+	return s.UpdateChat(chatID, func(chat *Chat) {
+		chat.AgentState = state
+	})
 }
 
 // GetAgentState retrieves the agent-specific state for a chat
@@ -256,10 +371,12 @@ func (s *ChatStoreJSON) GetAgentState(chatID string) ([]byte, error) {
 	if s == nil || s.store == nil {
 		return nil, nil
 	}
-	return s.store.GetAgentState(chatID)
+	chat := s.store.Get(chatID)
+	if chat == nil {
+		return nil, nil
+	}
+	return chat.AgentState, nil
 }
-
-// ============== Additional Methods for Compatibility ==============
 
 // ListWhitelistedGroups returns all whitelisted groups
 func (s *ChatStoreJSON) ListWhitelistedGroups() ([]struct {
@@ -271,5 +388,30 @@ func (s *ChatStoreJSON) ListWhitelistedGroups() ([]struct {
 	if s == nil || s.store == nil {
 		return nil, nil
 	}
-	return s.store.ListWhitelistedGroups()
+
+	items := s.store.List()
+	var results []struct {
+		GroupID   string
+		Platform  string
+		AddedBy   string
+		CreatedAt string
+	}
+
+	for _, chat := range items {
+		if chat.IsWhitelisted {
+			results = append(results, struct {
+				GroupID   string
+				Platform  string
+				AddedBy   string
+				CreatedAt string
+			}{
+				GroupID:   chat.ChatID,
+				Platform:  chat.Platform,
+				AddedBy:   chat.WhitelistedBy,
+				CreatedAt: chat.CreatedAt.Format(time.RFC3339),
+			})
+		}
+	}
+
+	return results, nil
 }

@@ -13,7 +13,7 @@ func TestJSONStoreBasicOperations(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "bot_chats.json")
 
-	store, err := NewJSONStore(filePath)
+	store, err := NewChatStoreJSON(filePath)
 	require.NoError(t, err)
 	require.NotNil(t, store)
 
@@ -43,14 +43,14 @@ func TestJSONStoreBasicOperations(t *testing.T) {
 	data, err := os.ReadFile(filePath)
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"version"`)
-	require.Contains(t, string(data), `"chats"`)
+	require.Contains(t, string(data), `"items"`) // Changed from "chats" to "items" (generic store)
 }
 
 func TestJSONStoreGetChat(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "bot_chats.json")
 
-	store, err := NewJSONStore(filePath)
+	store, err := NewChatStoreJSON(filePath)
 	require.NoError(t, err)
 	defer store.Close()
 
@@ -81,7 +81,7 @@ func TestJSONStoreGetOrCreateChat(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "bot_chats.json")
 
-	store, err := NewJSONStore(filePath)
+	store, err := NewChatStoreJSON(filePath)
 	require.NoError(t, err)
 	defer store.Close()
 
@@ -104,7 +104,7 @@ func TestJSONStoreUpdateChat(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "bot_chats.json")
 
-	store, err := NewJSONStore(filePath)
+	store, err := NewChatStoreJSON(filePath)
 	require.NoError(t, err)
 	defer store.Close()
 
@@ -136,7 +136,7 @@ func TestJSONStoreBindProject(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "bot_chats.json")
 
-	store, err := NewJSONStore(filePath)
+	store, err := NewChatStoreJSON(filePath)
 	require.NoError(t, err)
 	defer store.Close()
 
@@ -164,7 +164,7 @@ func TestJSONStoreSession(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "bot_chats.json")
 
-	store, err := NewJSONStore(filePath)
+	store, err := NewChatStoreJSON(filePath)
 	require.NoError(t, err)
 	defer store.Close()
 
@@ -198,7 +198,7 @@ func TestJSONStoreWhitelist(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "bot_chats.json")
 
-	store, err := NewJSONStore(filePath)
+	store, err := NewChatStoreJSON(filePath)
 	require.NoError(t, err)
 	defer store.Close()
 
@@ -220,7 +220,7 @@ func TestJSONStoreBashCwd(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "bot_chats.json")
 
-	store, err := NewJSONStore(filePath)
+	store, err := NewChatStoreJSON(filePath)
 	require.NoError(t, err)
 	defer store.Close()
 
@@ -249,7 +249,7 @@ func TestJSONStoreAgentState(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "bot_chats.json")
 
-	store, err := NewJSONStore(filePath)
+	store, err := NewChatStoreJSON(filePath)
 	require.NoError(t, err)
 	defer store.Close()
 
@@ -286,7 +286,7 @@ func TestJSONStoreListChatsByOwner(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "bot_chats.json")
 
-	store, err := NewJSONStore(filePath)
+	store, err := NewChatStoreJSON(filePath)
 	require.NoError(t, err)
 	defer store.Close()
 
@@ -339,7 +339,7 @@ func TestJSONStorePersistence(t *testing.T) {
 	filePath := filepath.Join(dir, "bot_chats.json")
 
 	// Create and populate store
-	store1, err := NewJSONStore(filePath)
+	store1, err := NewChatStoreJSON(filePath)
 	require.NoError(t, err)
 
 	testChat := &Chat{
@@ -357,7 +357,7 @@ func TestJSONStorePersistence(t *testing.T) {
 	require.NoError(t, err)
 
 	// Open new store instance
-	store2, err := NewJSONStore(filePath)
+	store2, err := NewChatStoreJSON(filePath)
 	require.NoError(t, err)
 	defer store2.Close()
 

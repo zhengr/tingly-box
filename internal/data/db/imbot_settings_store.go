@@ -295,6 +295,11 @@ func recordToSettings(record ImBotSettingsRecord) (Settings, error) {
 		}
 	}
 
+	// Set Token field for backward compatibility (from auth["token"])
+	if token, ok := settings.Auth["token"]; ok {
+		settings.Token = token
+	}
+
 	// Parse bash allowlist JSON
 	if record.BashAllowlist != "" {
 		if err := json.Unmarshal([]byte(record.BashAllowlist), &settings.BashAllowlist); err != nil {

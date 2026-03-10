@@ -1,6 +1,7 @@
 {
   "version": 1,
-  "chats": {
+  "updated": "2026-03-10T12:30:00Z",
+  "items": {
     "telegram:123456789": {
       "chat_id": "telegram:123456789",
       "platform": "telegram",
