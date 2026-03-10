@@ -9,8 +9,13 @@ import (
 	"strings"
 
 	"github.com/sirupsen/logrus"
+	"github.com/tingly-dev/tingly-agentscope/pkg/model"
 	"github.com/tingly-dev/tingly-agentscope/pkg/tool"
 )
+
+// ============================================================================
+// Tool Context & Executor
+// ============================================================================
 
 // ToolContext provides context for tool execution
 type ToolContext struct {
@@ -102,14 +107,27 @@ func (e *ToolExecutor) GetAllowedCommands() []string {
 }
 
 // ============================================================================
-// Internal Tools
+// Default Configuration
 // ============================================================================
 
-// GetStatusTool returns the current bot status
-type GetStatusTool struct {
-	executor      *ToolExecutor
-	getStatusFunc func(chatID string) (*StatusInfo, error)
+// DefaultBashAllowlist defines the default allowed bash commands
+// These are commands useful for preparation/guide work
+var DefaultBashAllowlist = []string{
+	// File navigation
+	"ls", "pwd", "cd", "cat", "tree",
+	// File operations
+	"mkdir", "rm", "cp", "mv", "touch", "chmod",
+	// Git operations
+	"git",
+	// Network (for setup)
+	"curl", "wget",
+	// Utility
+	"echo", "which", "env", "head", "tail", "wc", "find", "grep",
 }
+
+// ============================================================================
+// StatusInfo
+// ============================================================================
 
 // StatusInfo holds bot status information
 type StatusInfo struct {
@@ -121,6 +139,139 @@ type StatusInfo struct {
 	Whitelisted    bool   `json:"whitelisted"`
 }
 
+// ============================================================================
+// Unified Bash Tool
+// ============================================================================
+
+// BashTool is a unified bash execution tool
+type BashTool struct {
+	executor        *ToolExecutor
+	allowedCommands map[string]struct{}
+}
+
+// NewBashTool creates a new unified bash tool
+func NewBashTool(executor *ToolExecutor, allowlist []string) *BashTool {
+	allowed := make(map[string]struct{})
+	for _, cmd := range allowlist {
+		allowed[strings.ToLower(cmd)] = struct{}{}
+	}
+	return &BashTool{
+		executor:        executor,
+		allowedCommands: allowed,
+	}
+}
+
+// Name returns the tool name
+func (t *BashTool) Name() string {
+	return "bash"
+}
+
+// Description returns the tool description
+func (t *BashTool) Description() string {
+	return `Execute bash commands for file system operations and git.
+
+Allowed commands: ls, pwd, cat, mkdir, rm, cp, mv, git, curl, wget, and more.
+
+Note: Use 'change_workdir' tool instead of 'cd' to change working directory.
+
+Examples:
+- List files: ls -la
+- Show current directory: pwd
+- Clone repository: git clone https://github.com/user/repo.git
+- Check git status: git status`
+}
+
+// Parameters returns the tool parameters schema
+func (t *BashTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"command": map[string]any{
+				"type":        "string",
+				"description": "The bash command to execute (e.g., 'ls -la', 'cd /path')",
+			},
+		},
+		"required": []string{"command"},
+	}
+}
+
+// Call executes the bash command
+func (t *BashTool) Call(ctx context.Context, kwargs map[string]any) (*tool.ToolResponse, error) {
+	command, ok := kwargs["command"].(string)
+	if !ok || command == "" {
+		return tool.TextResponse("Error: 'command' parameter is required"), nil
+	}
+
+	// Parse the command to get the base command
+	parts := strings.Fields(command)
+	if len(parts) == 0 {
+		return tool.TextResponse("Error: empty command"), nil
+	}
+
+	baseCmd := strings.ToLower(parts[0])
+
+	// Check if command is allowed
+	if _, allowed := t.allowedCommands[baseCmd]; !allowed {
+		allowedList := make([]string, 0, len(t.allowedCommands))
+		for cmd := range t.allowedCommands {
+			allowedList = append(allowedList, cmd)
+		}
+		return tool.TextResponse(fmt.Sprintf("Error: command '%s' is not allowed. Allowed commands: %s",
+			baseCmd, strings.Join(allowedList, ", "))), nil
+	}
+
+	// cd is not allowed - use change_workdir tool instead
+	if baseCmd == "cd" {
+		return tool.TextResponse("Error: 'cd' is not available in bash. Use the 'change_workdir' tool to change working directory."), nil
+	}
+
+	// Execute command
+	return t.executeCommand(ctx, command)
+}
+
+// executeCommand executes a general bash command
+func (t *BashTool) executeCommand(ctx context.Context, command string) (*tool.ToolResponse, error) {
+	// Parse command
+	parts := strings.Fields(command)
+	if len(parts) == 0 {
+		return tool.TextResponse("Error: empty command"), nil
+	}
+
+	cmdName := parts[0]
+	args := parts[1:]
+
+	// Create command
+	cmd := exec.CommandContext(ctx, cmdName, args...)
+	cmd.Dir = t.executor.GetWorkingDirectory()
+
+	// Execute and capture output
+	output, err := cmd.CombinedOutput()
+
+	result := string(output)
+	if err != nil {
+		// Include error in output
+		result = fmt.Sprintf("%s\nError: %v", result, err)
+	}
+
+	// Add working directory context
+	cwd := t.executor.GetWorkingDirectory()
+	if result != "" {
+		result = fmt.Sprintf("(cwd: %s)\n%s", cwd, result)
+	}
+
+	return tool.TextResponse(result), nil
+}
+
+// ============================================================================
+// Get Status Tool
+// ============================================================================
+
+// GetStatusTool returns current bot status
+type GetStatusTool struct {
+	executor      *ToolExecutor
+	getStatusFunc func(chatID string) (*StatusInfo, error)
+}
+
 // NewGetStatusTool creates a new GetStatusTool
 func NewGetStatusTool(executor *ToolExecutor, getStatusFunc func(chatID string) (*StatusInfo, error)) *GetStatusTool {
 	return &GetStatusTool{
@@ -129,17 +280,49 @@ func NewGetStatusTool(executor *ToolExecutor, getStatusFunc func(chatID string) 
 	}
 }
 
+// Name returns the tool name
+func (t *GetStatusTool) Name() string {
+	return "get_status"
+}
+
+// Description returns the tool description
+func (t *GetStatusTool) Description() string {
+	return "Get the current bot status including agent, session, project path, and working directory."
+}
+
+// Parameters returns the tool parameters schema
+func (t *GetStatusTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"chat_id": map[string]any{
+				"type":        "string",
+				"description": "Chat ID to get status for",
+			},
+		},
+		"required": []string{},
+	}
+}
+
 // Call implements the tool interface
 func (t *GetStatusTool) Call(ctx context.Context, kwargs map[string]any) (*tool.ToolResponse, error) {
 	chatID, _ := kwargs["chat_id"].(string)
 
+	// Add current working directory from executor
+	cwd := t.executor.GetWorkingDirectory()
+
 	if t.getStatusFunc == nil {
-		return tool.TextResponse("Status function not configured"), nil
+		return tool.TextResponse(fmt.Sprintf("Current working directory: %s", cwd)), nil
 	}
 
 	status, err := t.getStatusFunc(chatID)
 	if err != nil {
 		return tool.TextResponse(fmt.Sprintf("Error getting status: %v", err)), nil
+	}
+
+	// Override working directory with executor's current directory
+	if status != nil {
+		status.WorkingDir = cwd
 	}
 
 	// Format status response
@@ -159,287 +342,194 @@ func (t *GetStatusTool) Call(ctx context.Context, kwargs map[string]any) (*tool.
 	return tool.TextResponse(response), nil
 }
 
-// GetProjectTool returns the current project binding info
-type GetProjectTool struct {
-	executor       *ToolExecutor
-	getProjectFunc func(chatID string) (string, bool, error)
-}
-
-// NewGetProjectTool creates a new GetProjectTool
-func NewGetProjectTool(executor *ToolExecutor, getProjectFunc func(chatID string) (string, bool, error)) *GetProjectTool {
-	return &GetProjectTool{
-		executor:       executor,
-		getProjectFunc: getProjectFunc,
-	}
-}
-
-// Call implements the tool interface
-func (t *GetProjectTool) Call(ctx context.Context, kwargs map[string]any) (*tool.ToolResponse, error) {
-	chatID, _ := kwargs["chat_id"].(string)
-
-	if t.getProjectFunc == nil {
-		return tool.TextResponse("Project function not configured"), nil
-	}
-
-	projectPath, ok, err := t.getProjectFunc(chatID)
-	if err != nil {
-		return tool.TextResponse(fmt.Sprintf("Error getting project: %v", err)), nil
-	}
-
-	if !ok {
-		return tool.TextResponse("No project bound to this chat."), nil
-	}
-
-	return tool.TextResponse(fmt.Sprintf("Current project: %s", projectPath)), nil
-}
-
 // ============================================================================
-// External Tools (Bash)
+// Change Directory Tool
 // ============================================================================
 
-// BashCDTool changes directory
-type BashCDTool struct {
+// ChangeDirTool changes the bound project directory
+type ChangeDirTool struct {
 	executor          *ToolExecutor
-	updateProjectFunc func(chatID string, projectPath string) error // Optional: updates project path in chat store
+	updateProjectFunc func(chatID string, projectPath string) error
 }
 
-// NewBashCDTool creates a new BashCDTool
-func NewBashCDTool(executor *ToolExecutor, updateProjectFunc func(chatID string, projectPath string) error) *BashCDTool {
-	return &BashCDTool{
+// NewChangeDirTool creates a new ChangeDirTool
+func NewChangeDirTool(executor *ToolExecutor, updateProjectFunc func(chatID string, projectPath string) error) *ChangeDirTool {
+	return &ChangeDirTool{
 		executor:          executor,
 		updateProjectFunc: updateProjectFunc,
 	}
 }
 
+// Name returns the tool name
+func (t *ChangeDirTool) Name() string {
+	return "change_workdir"
+}
+
+// Description returns the tool description
+func (t *ChangeDirTool) Description() string {
+	return `Change the bound project directory. This updates both the current working directory and the persisted project path.
+
+Use this when:
+- User wants to switch to a different project
+- User provides a new path to work on
+- Setting up initial project location`
+}
+
+// Parameters returns the tool parameters schema
+func (t *ChangeDirTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"path": map[string]any{
+				"type":        "string",
+				"description": "The directory path to change to (absolute or relative to current directory)",
+			},
+			"chat_id": map[string]any{
+				"type":        "string",
+				"description": "(internal) Chat ID for persistence",
+			},
+		},
+		"required": []string{"path"},
+	}
+}
+
 // Call implements the tool interface
-func (t *BashCDTool) Call(ctx context.Context, kwargs map[string]any) (*tool.ToolResponse, error) {
+func (t *ChangeDirTool) Call(ctx context.Context, kwargs map[string]any) (*tool.ToolResponse, error) {
 	path, ok := kwargs["path"].(string)
-	if !ok {
+	if !ok || path == "" {
 		return tool.TextResponse("Error: 'path' parameter is required"), nil
 	}
 
 	chatID, _ := kwargs["chat_id"].(string)
 
-	// Resolve path
-	path = t.executor.ResolvePath(path)
+	// Resolve path (handle relative paths)
+	resolvedPath := t.executor.ResolvePath(path)
 
 	// Check if directory exists
-	info, err := os.Stat(path)
+	info, err := os.Stat(resolvedPath)
 	if err != nil {
 		return tool.TextResponse(fmt.Sprintf("Error: %v", err)), nil
 	}
 	if !info.IsDir() {
-		return tool.TextResponse(fmt.Sprintf("Error: '%s' is not a directory", path)), nil
+		return tool.TextResponse(fmt.Sprintf("Error: '%s' is not a directory", resolvedPath)), nil
 	}
 
-	// Update working directory
-	t.executor.SetWorkingDirectory(path)
+	// Update working directory in executor
+	t.executor.SetWorkingDirectory(resolvedPath)
 
-	// Also update project path in chat store if callback provided and chatID is set
+	// Persist to chat store
 	if t.updateProjectFunc != nil && chatID != "" {
-		if err := t.updateProjectFunc(chatID, path); err != nil {
-			logrus.WithError(err).Warn("Failed to update project path in chat store")
+		if err := t.updateProjectFunc(chatID, resolvedPath); err != nil {
+			logrus.WithError(err).WithField("chatID", chatID).Warn("Failed to update project path in chat store")
+			return tool.TextResponse(fmt.Sprintf("Warning: directory changed but persistence failed: %v\nNew directory: %s", err, resolvedPath)), nil
 		}
 	}
 
-	return tool.TextResponse(fmt.Sprintf("Changed directory to: %s", path)), nil
-}
+	// List directory contents to show user where they are
+	lsCmd := exec.CommandContext(ctx, "ls", "-la")
+	lsCmd.Dir = resolvedPath
+	output, _ := lsCmd.CombinedOutput()
 
-// BashLSTool lists directory contents
-type BashLSTool struct {
-	executor *ToolExecutor
-}
-
-// NewBashLSTool creates a new BashLSTool
-func NewBashLSTool(executor *ToolExecutor) *BashLSTool {
-	return &BashLSTool{executor: executor}
-}
-
-// Call implements the tool interface
-func (t *BashLSTool) Call(ctx context.Context, kwargs map[string]any) (*tool.ToolResponse, error) {
-	path := t.executor.GetWorkingDirectory()
-	if p, ok := kwargs["path"].(string); ok && p != "" {
-		path = t.executor.ResolvePath(p)
-	}
-
-	// Execute ls
-	output, err := t.executor.ExecuteBash(ctx, "ls", "-la", path)
-	if err != nil {
-		return tool.TextResponse(fmt.Sprintf("Error: %v", err)), nil
-	}
-
-	return tool.TextResponse(fmt.Sprintf("Directory listing for %s:\n%s", path, output)), nil
-}
-
-// BashPWDTool prints working directory
-type BashPWDTool struct {
-	executor *ToolExecutor
-}
-
-// NewBashPWDTool creates a new BashPWDTool
-func NewBashPWDTool(executor *ToolExecutor) *BashPWDTool {
-	return &BashPWDTool{executor: executor}
-}
-
-// Call implements the tool interface
-func (t *BashPWDTool) Call(ctx context.Context, kwargs map[string]any) (*tool.ToolResponse, error) {
-	cwd := t.executor.GetWorkingDirectory()
-	return tool.TextResponse(fmt.Sprintf("Current directory: %s", cwd)), nil
-}
-
-// GitCloneTool clones a git repository
-type GitCloneTool struct {
-	executor *ToolExecutor
-}
-
-// NewGitCloneTool creates a new GitCloneTool
-func NewGitCloneTool(executor *ToolExecutor) *GitCloneTool {
-	return &GitCloneTool{executor: executor}
-}
-
-// Call implements the tool interface
-func (t *GitCloneTool) Call(ctx context.Context, kwargs map[string]any) (*tool.ToolResponse, error) {
-	repo, ok := kwargs["repo"].(string)
-	if !ok {
-		return tool.TextResponse("Error: 'repo' parameter is required"), nil
-	}
-
-	dest, ok := kwargs["dest"].(string)
-	if !ok {
-		// Use repo name as default destination
-		parts := strings.Split(repo, "/")
-		dest = strings.TrimSuffix(parts[len(parts)-1], ".git")
-	}
-
-	// Resolve destination path
-	dest = t.executor.ResolvePath(dest)
-
-	// Check if destination already exists
-	if _, err := os.Stat(dest); err == nil {
-		return tool.TextResponse(fmt.Sprintf("Error: '%s' already exists", dest)), nil
-	}
-
-	logrus.WithField("repo", repo).WithField("dest", dest).Info("Cloning repository")
-
-	// Clone the repository
-	// Note: git is not in the default allowlist, so we need special handling
-	// For now, we'll use os/exec directly
-	cmd := exec.CommandContext(ctx, "git", "clone", repo, dest)
-	cmd.Dir = t.executor.GetWorkingDirectory()
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return tool.TextResponse(fmt.Sprintf("Clone failed: %v\n%s", err, string(output))), nil
-	}
-
-	return tool.TextResponse(fmt.Sprintf("Successfully cloned %s to %s", repo, dest)), nil
-}
-
-// GitStatusTool shows git repository status
-type GitStatusTool struct {
-	executor *ToolExecutor
-}
-
-// NewGitStatusTool creates a new GitStatusTool
-func NewGitStatusTool(executor *ToolExecutor) *GitStatusTool {
-	return &GitStatusTool{executor: executor}
-}
-
-// Call implements the tool interface
-func (t *GitStatusTool) Call(ctx context.Context, kwargs map[string]any) (*tool.ToolResponse, error) {
-	cwd := t.executor.GetWorkingDirectory()
-
-	// Check if we're in a git repo
-	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--git-dir")
-	cmd.Dir = cwd
-	if err := cmd.Run(); err != nil {
-		return tool.TextResponse(fmt.Sprintf("Not a git repository: %s", cwd)), nil
-	}
-
-	// Get git status
-	cmd = exec.CommandContext(ctx, "git", "status", "-sb")
-	cmd.Dir = cwd
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return tool.TextResponse(fmt.Sprintf("Error: %v", err)), nil
-	}
-
-	return tool.TextResponse(fmt.Sprintf("Git status:\n%s", string(output))), nil
+	response := fmt.Sprintf("✅ Changed directory to: %s\n\nDirectory contents:\n%s", resolvedPath, string(output))
+	return tool.TextResponse(response), nil
 }
 
 // ============================================================================
-// Tool Registration Helper
+// Handoff Tool (Hidden for now)
 // ============================================================================
+
+// HandoffToCCTool provides handoff to Claude Code
+// Note: Currently not registered, kept for future use
+type HandoffToCCTool struct{}
+
+// NewHandoffToCCTool creates a new handoff tool
+func NewHandoffToCCTool() *HandoffToCCTool {
+	return &HandoffToCCTool{}
+}
+
+// Name returns the tool name
+func (t *HandoffToCCTool) Name() string {
+	return "handoff_to_cc"
+}
+
+// Description returns the tool description
+func (t *HandoffToCCTool) Description() string {
+	return "Hand off control to Claude Code (@cc) for coding tasks. Use this when the user is ready to start coding."
+}
+
+// Parameters returns the tool parameters schema
+func (t *HandoffToCCTool) Parameters() map[string]any {
+	return map[string]any{
+		"type":       "object",
+		"properties": map[string]any{},
+	}
+}
+
+// Call implements the tool interface
+func (t *HandoffToCCTool) Call(ctx context.Context, kwargs map[string]any) (*tool.ToolResponse, error) {
+	return tool.TextResponse("HANDOFF_TO_CC"), nil
+}
+
+// ============================================================================
+// Tool Registration
+// ============================================================================
+
+// ToolWithSchema is an interface for tools that can provide their own schema
+type ToolWithSchema interface {
+	tool.ToolCallable
+	Name() string
+	Description() string
+	Parameters() map[string]any
+}
 
 // RegisterTools registers all smart guide tools with a toolkit
 func RegisterTools(toolkit *tool.Toolkit, executor *ToolExecutor,
 	getStatusFunc func(chatID string) (*StatusInfo, error),
-	getProjectFunc func(chatID string) (string, bool, error),
 	updateProjectFunc func(chatID string, projectPath string) error) error {
 
-	// Create tool groups first
-	if err := toolkit.CreateToolGroup("internal", "Internal tools for bot status and project management", true, ""); err != nil {
-		return fmt.Errorf("failed to create internal tool group: %w", err)
-	}
-	if err := toolkit.CreateToolGroup("bash", "Bash command tools for file system operations", true, ""); err != nil {
+	// Create tool groups
+	if err := toolkit.CreateToolGroup("bash", "Bash commands for file system and git operations", true, ""); err != nil {
 		return fmt.Errorf("failed to create bash tool group: %w", err)
 	}
-	if err := toolkit.CreateToolGroup("git", "Git version control tools", true, ""); err != nil {
-		return fmt.Errorf("failed to create git tool group: %w", err)
+	if err := toolkit.CreateToolGroup("project", "Project and directory management tools", true, ""); err != nil {
+		return fmt.Errorf("failed to create project tool group: %w", err)
 	}
 
-	// Internal tools
+	// Register unified bash tool
+	bashTool := NewBashTool(executor, DefaultBashAllowlist)
+	if err := registerToolWithSchema(toolkit, bashTool, "bash"); err != nil {
+		return fmt.Errorf("failed to register bash tool: %w", err)
+	}
+
+	// Register get_status tool (in project group for visibility)
 	getStatusTool := NewGetStatusTool(executor, getStatusFunc)
-	if err := toolkit.Register(getStatusTool, &tool.RegisterOptions{
-		GroupName: "internal",
-	}); err != nil {
+	if err := registerToolWithSchema(toolkit, getStatusTool, "project"); err != nil {
 		return fmt.Errorf("failed to register get_status tool: %w", err)
 	}
 
-	getProjectTool := NewGetProjectTool(executor, getProjectFunc)
-	if err := toolkit.Register(getProjectTool, &tool.RegisterOptions{
-		GroupName: "internal",
-	}); err != nil {
-		return fmt.Errorf("failed to register get_project tool: %w", err)
+	// Register change_workdir tool
+	changeDirTool := NewChangeDirTool(executor, updateProjectFunc)
+	if err := registerToolWithSchema(toolkit, changeDirTool, "project"); err != nil {
+		return fmt.Errorf("failed to register change_workdir tool: %w", err)
 	}
 
-	// Bash tools
-	cdTool := NewBashCDTool(executor, updateProjectFunc)
-	if err := toolkit.Register(cdTool, &tool.RegisterOptions{
-		GroupName: "bash",
-	}); err != nil {
-		return fmt.Errorf("failed to register cd tool: %w", err)
-	}
-
-	lsTool := NewBashLSTool(executor)
-	if err := toolkit.Register(lsTool, &tool.RegisterOptions{
-		GroupName: "bash",
-	}); err != nil {
-		return fmt.Errorf("failed to register ls tool: %w", err)
-	}
-
-	pwdTool := NewBashPWDTool(executor)
-	if err := toolkit.Register(pwdTool, &tool.RegisterOptions{
-		GroupName: "bash",
-	}); err != nil {
-		return fmt.Errorf("failed to register pwd tool: %w", err)
-	}
-
-	// Git tools
-	cloneTool := NewGitCloneTool(executor)
-	if err := toolkit.Register(cloneTool, &tool.RegisterOptions{
-		GroupName: "git",
-	}); err != nil {
-		return fmt.Errorf("failed to register git_clone tool: %w", err)
-	}
-
-	statusTool := NewGitStatusTool(executor)
-	if err := toolkit.Register(statusTool, &tool.RegisterOptions{
-		GroupName: "git",
-	}); err != nil {
-		return fmt.Errorf("failed to register git_status tool: %w", err)
-	}
+	// Note: handoff_to_cc is not registered for now
 
 	logrus.Info("Smart guide tools registered successfully")
 	return nil
+}
+
+// registerToolWithSchema registers a tool that implements ToolWithSchema interface
+func registerToolWithSchema(toolkit *tool.Toolkit, t ToolWithSchema, groupName string) error {
+	return toolkit.Register(t, &tool.RegisterOptions{
+		GroupName: groupName,
+		JSONSchema: &model.ToolDefinition{
+			Type: "function",
+			Function: model.FunctionDefinition{
+				Name:        t.Name(),
+				Description: t.Description(),
+				Parameters:  t.Parameters(),
+			},
+		},
+	})
 }
