@@ -22,8 +22,9 @@ const (
 
 // Agent routing constants
 const (
-	agentClaudeCode = agentboot.AgentTypeClaude
-	agentMock       = agentboot.AgentTypeMockAgent
+	agentTinglyBox  agentboot.AgentType = "tingly-box" // @tb - Smart Guide
+	agentClaudeCode agentboot.AgentType = agentboot.AgentTypeClaude
+	agentMock       agentboot.AgentType = agentboot.AgentTypeMockAgent
 )
 
 // Bot command subcommand constants (used after /bot prefix)

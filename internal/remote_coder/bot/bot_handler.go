@@ -18,6 +18,7 @@ import (
 	mock "github.com/tingly-dev/tingly-box/agentboot/mockagent"
 	"github.com/tingly-dev/tingly-box/imbot"
 	"github.com/tingly-dev/tingly-box/internal/remote_coder/session"
+	"github.com/tingly-dev/tingly-box/internal/remote_coder/smartguide"
 	"github.com/tingly-dev/tingly-box/internal/remote_coder/summarizer"
 )
 
@@ -34,6 +35,10 @@ type BotHandler struct {
 	imPrompter       *IMPrompter
 	fileStore        *FileStore
 	interaction      *imbot.InteractionHandler // New interaction handler
+
+	// Smart guide agent (@tb)
+	smartGuideAgent  *smartguide.TinglyBoxAgent
+	handoffManager   *smartguide.HandoffManager
 
 	// runningCancel tracks cancel functions for active executions per chatID
 	runningCancel   map[string]context.CancelFunc
@@ -99,6 +104,9 @@ func NewBotHandler(
 		fileStore.SetTelegramToken(token)
 	}
 
+	// Initialize handoff manager
+	handoffMgr := smartguide.NewHandoffManager()
+
 	return &BotHandler{
 		ctx:                 ctx,
 		botSetting:          botSetting,
@@ -111,6 +119,7 @@ func NewBotHandler(
 		imPrompter:          imPrompter,
 		fileStore:           fileStore,
 		interaction:         interactionHandler,
+		handoffManager:      handoffMgr,
 		runningCancel:       make(map[string]context.CancelFunc),
 		pendingBinds:        make(map[string]*PendingBind),
 		actionMenuMessageID: make(map[string]string),
@@ -234,6 +243,136 @@ func (h *BotHandler) handleStopCommand(hCtx HandlerContext, clearSession bool) {
 	h.SendText(hCtx, "🛑 Task stopped.")
 }
 
+// ============== Agent Routing Methods ==============
+
+// getCurrentAgent retrieves the current agent for a chat
+// Returns "claude" as default if smart guide is not enabled
+func (h *BotHandler) getCurrentAgent(chatID string) (agentboot.AgentType, error) {
+	currentAgent, err := h.chatStore.GetCurrentAgent(chatID)
+	if err != nil {
+		return agentClaudeCode, err
+	}
+
+	// For now, always return claude unless explicitly set to tingly-box
+	// Smart guide is opt-in via configuration
+	if currentAgent == string(agentTinglyBox) {
+		return agentTinglyBox, nil
+	}
+
+	return agentClaudeCode, nil
+}
+
+// setCurrentAgent sets the current agent for a chat
+func (h *BotHandler) setCurrentAgent(chatID string, agentType agentboot.AgentType) error {
+	return h.chatStore.SetCurrentAgent(chatID, string(agentType))
+}
+
+// handleHandoff performs a handoff from one agent to another
+func (h *BotHandler) handleHandoff(hCtx HandlerContext, toAgent agentboot.AgentType) error {
+	// Get current agent
+	fromAgent, err := h.getCurrentAgent(hCtx.ChatID)
+	if err != nil {
+		return fmt.Errorf("failed to get current agent: %w", err)
+	}
+
+	// Get project path
+	projectPath, _, _ := h.getProjectPathForChat(hCtx)
+	if projectPath == "" {
+		projectPath, _, _ = h.chatStore.GetProjectPath(hCtx.ChatID)
+	}
+
+	// Get session ID
+	sessionID, _, _ := h.chatStore.GetSession(hCtx.ChatID)
+
+	// Create handoff state
+	handoffState := &smartguide.HandoffState{
+		FromAgent:   string(fromAgent),
+		ToAgent:     string(toAgent),
+		Timestamp:   time.Now(),
+		ProjectPath: projectPath,
+		SessionID:   sessionID,
+		ChatID:      hCtx.ChatID,
+	}
+
+	// Execute handoff
+	result := h.handoffManager.ExecuteHandoff(h.ctx, handoffState)
+	if !result.Success {
+		return fmt.Errorf("handoff failed: %s", result.Error)
+	}
+
+	// Update current agent in chat store
+	if err := h.setCurrentAgent(hCtx.ChatID, toAgent); err != nil {
+		logrus.WithError(err).Error("Failed to update current agent after handoff")
+	}
+
+	// Send handoff confirmation
+	h.SendText(hCtx, result.Message)
+
+	return nil
+}
+
+// routeToAgent routes a message to the appropriate agent based on current_agent
+func (h *BotHandler) routeToAgent(hCtx HandlerContext, text string) error {
+	// Check for handoff commands first
+	if toAgent, isHandoff := smartguide.DetectHandoffCommand(text); isHandoff {
+		// Determine target agent
+		var targetAgent agentboot.AgentType
+		if toAgent == agentTinglyBox {
+			targetAgent = agentTinglyBox
+		} else if toAgent == agentboot.AgentTypeClaude {
+			targetAgent = agentClaudeCode
+		} else {
+			return fmt.Errorf("unknown target agent: %s", toAgent)
+		}
+
+		// Perform handoff
+		return h.handleHandoff(hCtx, targetAgent)
+	}
+
+	// Get current agent
+	currentAgent, err := h.getCurrentAgent(hCtx.ChatID)
+	if err != nil {
+		logrus.WithError(err).Warn("Failed to get current agent, defaulting to claude")
+		currentAgent = agentClaudeCode
+	}
+
+	// Route to appropriate agent
+	switch currentAgent {
+	case agentTinglyBox:
+		return h.handleSmartGuideMessage(hCtx, text)
+	case agentClaudeCode:
+		// Get project path
+		projectPath, _, _ := h.getProjectPathForChat(hCtx)
+		h.handleAgentMessage(hCtx, agentClaudeCode, text, projectPath)
+		return nil
+	default:
+		return fmt.Errorf("unknown agent type: %s", currentAgent)
+	}
+}
+
+// getProjectPathForChat gets the project path for a chat
+func (h *BotHandler) getProjectPathForChat(hCtx HandlerContext) (string, bool, error) {
+	// Try direct chat first
+	if hCtx.IsDirect {
+		projectPath, ok, err := h.chatStore.GetProjectPath(hCtx.ChatID)
+		return projectPath, ok, err
+	}
+
+	// Try group chat
+	projectPath, ok, err := h.chatStore.GetProjectPath(hCtx.ChatID)
+	return projectPath, ok, err
+}
+
+// handleSmartGuideMessage handles a message for the smart guide agent
+func (h *BotHandler) handleSmartGuideMessage(hCtx HandlerContext, text string) error {
+	// For now, send a simple response
+	// TODO: Implement full smart guide agent interaction
+	h.SendText(hCtx, "👋 Smart Guide (@tb) is not fully enabled yet. Use @cc to switch to Claude Code for now.")
+	return nil
+}
+
+// ============== End Agent Routing Methods ==============
+
 // handleDirectMessage handles messages from direct chat
 func (h *BotHandler) handleDirectMessage(hCtx HandlerContext) {
 	// Check chat ID lock
@@ -264,7 +403,10 @@ func (h *BotHandler) handleDirectMessage(hCtx HandlerContext) {
 		logrus.WithError(err).Warn("Failed to load session mapping")
 	}
 	if ok && sessionID != "" {
-		h.handleAgentMessage(hCtx, agentClaudeCode, hCtx.Text, "")
+		// Use agent routing for active sessions
+		if routeErr := h.routeToAgent(hCtx, hCtx.Text); routeErr != nil {
+			logrus.WithError(routeErr).Error("Failed to route to agent")
+		}
 		return
 	}
 
@@ -300,8 +442,11 @@ func (h *BotHandler) handleGroupMessage(hCtx HandlerContext) {
 	}
 
 	// Check for project binding
-	if projectPath, ok := getProjectPathForGroup(h.chatStore, hCtx.ChatID, string(hCtx.Platform)); ok {
-		h.handleAgentMessage(hCtx, agentClaudeCode, hCtx.Text, projectPath)
+	if _, ok := getProjectPathForGroup(h.chatStore, hCtx.ChatID, string(hCtx.Platform)); ok {
+		// Use agent routing for groups with project binding
+		if routeErr := h.routeToAgent(hCtx, hCtx.Text); routeErr != nil {
+			logrus.WithError(routeErr).Error("Failed to route to agent")
+		}
 		return
 	}
 
