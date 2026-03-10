@@ -117,7 +117,7 @@ func initSchema(db *sql.DB) error {
 			is_whitelisted INTEGER DEFAULT 0,
 			whitelisted_by TEXT,
 			bash_cwd TEXT,
-			current_agent TEXT DEFAULT 'claude',
+			current_agent TEXT DEFAULT 'tingly-box',
 			agent_state BLOB,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
@@ -387,7 +387,7 @@ func migrateToAgentState(db *sql.DB) error {
 
 	// Add columns if they don't exist
 	if !hasCurrentAgent {
-		_, err = db.Exec(`ALTER TABLE remote_coder_chats ADD COLUMN current_agent TEXT DEFAULT 'claude'`)
+		_, err = db.Exec(`ALTER TABLE remote_coder_chats ADD COLUMN current_agent TEXT DEFAULT 'tingly-box'`)
 		if err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			return fmt.Errorf("failed to add current_agent column: %w", err)
 		}

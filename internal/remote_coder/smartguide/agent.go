@@ -27,8 +27,9 @@ type AgentConfig struct {
 	TBClient         tbclient.TBClient // TB Client for getting model configuration
 	ToolExecutor     *ToolExecutor
 	// Callback functions for internal tools
-	GetStatusFunc  func(chatID string) (*StatusInfo, error)
-	GetProjectFunc func(chatID string) (string, bool, error)
+	GetStatusFunc     func(chatID string) (*StatusInfo, error)
+	GetProjectFunc    func(chatID string) (string, bool, error)
+	UpdateProjectFunc func(chatID string, projectPath string) error // Updates project path in chat store
 }
 
 // NewTinglyBoxAgent creates a new smart guide agent
@@ -114,7 +115,7 @@ func NewTinglyBoxAgent(config *AgentConfig) (*TinglyBoxAgent, error) {
 	toolkit := tool.NewToolkit()
 
 	// Register tools
-	if err := RegisterTools(toolkit, executor, config.GetStatusFunc, config.GetProjectFunc); err != nil {
+	if err := RegisterTools(toolkit, executor, config.GetStatusFunc, config.GetProjectFunc, config.UpdateProjectFunc); err != nil {
 		return nil, fmt.Errorf("failed to register tools: %w", err)
 	}
 
@@ -207,12 +208,14 @@ func NewAgentFactory(config *SmartGuideConfig, tbClient tbclient.TBClient) *Agen
 
 // CreateAgent creates a new TinglyBoxAgent with the given callbacks
 func (f *AgentFactory) CreateAgent(getStatusFunc func(chatID string) (*StatusInfo, error),
-	getProjectFunc func(chatID string) (string, bool, error)) (*TinglyBoxAgent, error) {
+	getProjectFunc func(chatID string) (string, bool, error),
+	updateProjectFunc func(chatID string, projectPath string) error) (*TinglyBoxAgent, error) {
 
 	return NewTinglyBoxAgent(&AgentConfig{
-		SmartGuideConfig: f.config,
-		TBClient:         f.tbClient,
-		GetStatusFunc:    getStatusFunc,
-		GetProjectFunc:   getProjectFunc,
+		SmartGuideConfig:  f.config,
+		TBClient:          f.tbClient,
+		GetStatusFunc:     getStatusFunc,
+		GetProjectFunc:    getProjectFunc,
+		UpdateProjectFunc: updateProjectFunc,
 	})
 }

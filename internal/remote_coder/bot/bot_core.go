@@ -22,7 +22,7 @@ const (
 
 // Agent routing constants
 const (
-	agentTinglyBox  agentboot.AgentType = "tingly-box" // @tb - Smart Guide
+	agentTinglyBox  agentboot.AgentType = "tingly-box" // @tb - Smart Guide (default)
 	agentClaudeCode agentboot.AgentType = agentboot.AgentTypeClaude
 	agentMock       agentboot.AgentType = agentboot.AgentTypeMockAgent
 )

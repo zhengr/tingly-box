@@ -190,12 +190,16 @@ func (t *GetProjectTool) Call(ctx context.Context, kwargs map[string]any) (*tool
 
 // BashCDTool changes directory
 type BashCDTool struct {
-	executor *ToolExecutor
+	executor       *ToolExecutor
+	updateProjectFunc func(chatID string, projectPath string) error // Optional: updates project path in chat store
 }
 
 // NewBashCDTool creates a new BashCDTool
-func NewBashCDTool(executor *ToolExecutor) *BashCDTool {
-	return &BashCDTool{executor: executor}
+func NewBashCDTool(executor *ToolExecutor, updateProjectFunc func(chatID string, projectPath string) error) *BashCDTool {
+	return &BashCDTool{
+		executor:         executor,
+		updateProjectFunc: updateProjectFunc,
+	}
 }
 
 // Call implements the tool interface
@@ -204,6 +208,8 @@ func (t *BashCDTool) Call(ctx context.Context, kwargs map[string]any) (*tool.Too
 	if !ok {
 		return tool.TextResponse("Error: 'path' parameter is required"), nil
 	}
+
+	chatID, _ := kwargs["chat_id"].(string)
 
 	// Resolve path
 	if !filepath.IsAbs(path) {
@@ -221,6 +227,13 @@ func (t *BashCDTool) Call(ctx context.Context, kwargs map[string]any) (*tool.Too
 
 	// Update working directory
 	t.executor.SetWorkingDirectory(path)
+
+	// Also update project path in chat store if callback provided and chatID is set
+	if t.updateProjectFunc != nil && chatID != "" {
+		if err := t.updateProjectFunc(chatID, path); err != nil {
+			logrus.WithError(err).Warn("Failed to update project path in chat store")
+		}
+	}
 
 	return tool.TextResponse(fmt.Sprintf("Changed directory to: %s", path)), nil
 }
@@ -359,7 +372,8 @@ func (t *GitStatusTool) Call(ctx context.Context, kwargs map[string]any) (*tool.
 // RegisterTools registers all smart guide tools with a toolkit
 func RegisterTools(toolkit *tool.Toolkit, executor *ToolExecutor,
 	getStatusFunc func(chatID string) (*StatusInfo, error),
-	getProjectFunc func(chatID string) (string, bool, error)) error {
+	getProjectFunc func(chatID string) (string, bool, error),
+	updateProjectFunc func(chatID string, projectPath string) error) error {
 
 	// Internal tools
 	getStatusTool := NewGetStatusTool(executor, getStatusFunc)
@@ -377,7 +391,7 @@ func RegisterTools(toolkit *tool.Toolkit, executor *ToolExecutor,
 	}
 
 	// Bash tools
-	cdTool := NewBashCDTool(executor)
+	cdTool := NewBashCDTool(executor, updateProjectFunc)
 	if err := toolkit.Register(cdTool, &tool.RegisterOptions{
 		GroupName: "bash",
 	}); err != nil {

@@ -250,20 +250,22 @@ func (h *BotHandler) handleStopCommand(hCtx HandlerContext, clearSession bool) {
 // ============== Agent Routing Methods ==============
 
 // getCurrentAgent retrieves the current agent for a chat
-// Returns "claude" as default if smart guide is not enabled
+// Returns "tingly-box" as default (Smart Guide is now the entry point)
 func (h *BotHandler) getCurrentAgent(chatID string) (agentboot.AgentType, error) {
 	currentAgent, err := h.chatStore.GetCurrentAgent(chatID)
 	if err != nil {
-		return agentClaudeCode, err
+		return agentTinglyBox, err
 	}
 
-	// For now, always return claude unless explicitly set to tingly-box
-	// Smart guide is opt-in via configuration
+	// Return the stored agent type
 	if currentAgent == string(agentTinglyBox) {
 		return agentTinglyBox, nil
 	}
+	if currentAgent == string(agentClaudeCode) || currentAgent == "claude" {
+		return agentClaudeCode, nil
+	}
 
-	return agentClaudeCode, nil
+	return agentTinglyBox, nil
 }
 
 // setCurrentAgent sets the current agent for a chat
@@ -336,8 +338,8 @@ func (h *BotHandler) routeToAgent(hCtx HandlerContext, text string) error {
 	// Get current agent
 	currentAgent, err := h.getCurrentAgent(hCtx.ChatID)
 	if err != nil {
-		logrus.WithError(err).Warn("Failed to get current agent, defaulting to claude")
-		currentAgent = agentClaudeCode
+		logrus.WithError(err).Warn("Failed to get current agent, defaulting to smart guide")
+		currentAgent = agentTinglyBox
 	}
 
 	// Route to appropriate agent
@@ -402,6 +404,10 @@ func (h *BotHandler) handleSmartGuideMessage(hCtx HandlerContext, text string) e
 			// getProjectFunc callback
 			func(chatID string) (string, bool, error) {
 				return h.chatStore.GetProjectPath(chatID)
+			},
+			// updateProjectFunc callback - updates project path in chat store
+			func(chatID string, projectPath string) error {
+				return h.chatStore.BindProject(chatID, "telegram", projectPath, hCtx.SenderID)
 			},
 		)
 
@@ -476,20 +482,12 @@ func (h *BotHandler) handleDirectMessage(hCtx HandlerContext) {
 		return
 	}
 
-	// Check for active session or show project selection
-	sessionID, ok, err := h.chatStore.GetSession(hCtx.ChatID)
-	if err != nil {
-		logrus.WithError(err).Warn("Failed to load session mapping")
+	// NEW: Route all messages through agent router
+	// The router now defaults to @tb (Smart Guide) for new users
+	// Smart Guide can help with navigation, project setup, and handoff to @cc
+	if routeErr := h.routeToAgent(hCtx, hCtx.Text); routeErr != nil {
+		logrus.WithError(routeErr).Error("Failed to route to agent")
 	}
-	if ok && sessionID != "" {
-		// Use agent routing for active sessions
-		if routeErr := h.routeToAgent(hCtx, hCtx.Text); routeErr != nil {
-			logrus.WithError(routeErr).Error("Failed to route to agent")
-		}
-		return
-	}
-
-	h.showProjectSelectionOrGuidance(hCtx)
 }
 
 // handleGroupMessage handles messages from group chat
@@ -520,16 +518,11 @@ func (h *BotHandler) handleGroupMessage(hCtx HandlerContext) {
 		return
 	}
 
-	// Check for project binding
-	if _, ok := getProjectPathForGroup(h.chatStore, hCtx.ChatID, string(hCtx.Platform)); ok {
-		// Use agent routing for groups with project binding
-		if routeErr := h.routeToAgent(hCtx, hCtx.Text); routeErr != nil {
-			logrus.WithError(routeErr).Error("Failed to route to agent")
-		}
-		return
+	// NEW: Route all messages through agent router (defaults to @tb)
+	// Smart Guide can help groups with navigation, project setup, and handoff to @cc
+	if routeErr := h.routeToAgent(hCtx, hCtx.Text); routeErr != nil {
+		logrus.WithError(routeErr).Error("Failed to route to agent")
 	}
-
-	h.SendText(hCtx, "No project bound to this group. Use /bind <path> to bind a project.")
 }
 
 // handleMediaMessage handles messages with media attachments
@@ -665,18 +658,11 @@ func (h *BotHandler) handleSlashCommands(hCtx HandlerContext) {
 		return
 	}
 
-	// All other slash commands go to Claude Code
-	sessionID, ok, err := h.chatStore.GetSession(hCtx.ChatID)
-	if err != nil {
-		logrus.WithError(err).Warn("Failed to load session mapping")
+	// All other slash commands go to agent router (defaults to @tb)
+	// The agent router will handle the command or route to appropriate agent
+	if routeErr := h.routeToAgent(hCtx, hCtx.Text); routeErr != nil {
+		logrus.WithError(routeErr).Error("Failed to route command to agent")
 	}
-	if ok && sessionID != "" {
-		h.handleAgentMessage(hCtx, agentClaudeCode, hCtx.Text, "")
-		return
-
-	}
-
-	h.showProjectSelectionOrGuidance(hCtx)
 }
 
 // SendText sends a plain text message

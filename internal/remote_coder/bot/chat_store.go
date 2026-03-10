@@ -63,7 +63,7 @@ func InitChatSchema(db *sql.DB) error {
 			is_whitelisted INTEGER DEFAULT 0,
 			whitelisted_by TEXT,
 			bash_cwd TEXT,
-			current_agent TEXT DEFAULT 'claude',
+			current_agent TEXT DEFAULT 'tingly-box',
 			agent_state BLOB,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
@@ -81,7 +81,7 @@ func InitChatSchema(db *sql.DB) error {
 func MigrateChatSchema(db *sql.DB) error {
 	// Add current_agent column if it doesn't exist
 	_, err := db.Exec(`
-		ALTER TABLE remote_coder_chats ADD COLUMN current_agent TEXT DEFAULT 'claude';
+		ALTER TABLE remote_coder_chats ADD COLUMN current_agent TEXT DEFAULT 'tingly-box';
 	`)
 	if err != nil {
 		// Column might already exist, check error
@@ -197,7 +197,7 @@ func (s *ChatStore) UpsertChat(chat *Chat) error {
 
 	// Set default agent if not specified
 	if chat.CurrentAgent == "" {
-		chat.CurrentAgent = "claude"
+		chat.CurrentAgent = "tingly-box"
 	}
 
 	isWhitelisted := 0
@@ -394,17 +394,17 @@ func (s *ChatStore) SetCurrentAgent(chatID, agentType string) error {
 }
 
 // GetCurrentAgent retrieves the current agent for a chat
-// Returns "claude" as default if not set
+// Returns "tingly-box" as default if not set
 func (s *ChatStore) GetCurrentAgent(chatID string) (string, error) {
 	chat, err := s.GetChat(chatID)
 	if err != nil {
 		return "", err
 	}
 	if chat == nil {
-		return "claude", nil // Default to Claude Code
+		return "tingly-box", nil // Default to Smart Guide
 	}
 	if chat.CurrentAgent == "" {
-		return "claude", nil // Default to Claude Code
+		return "tingly-box", nil // Default to Smart Guide
 	}
 	return chat.CurrentAgent, nil
 }

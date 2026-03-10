@@ -42,7 +42,7 @@ type ModelConfig struct {
 // DefaultSmartGuideConfig returns the default configuration
 func DefaultSmartGuideConfig() *SmartGuideConfig {
 	return &SmartGuideConfig{
-		Enabled:       false, // Opt-in for now
+		Enabled:       true, // Now enabled by default as the entry point
 		MaxIterations: 5,
 		Temperature:   0.7,
 		ToolsEnabled: map[string]bool{
@@ -68,7 +68,7 @@ func DefaultSmartGuideConfig() *SmartGuideConfig {
 // For now, returns default config - settings will be loaded externally
 func LoadSmartGuideConfig() *SmartGuideConfig {
 	cfg := DefaultSmartGuideConfig()
-	cfg.Enabled = false // Opt-in for now
+	cfg.Enabled = true // Enabled by default as the entry point
 	return cfg
 }
 
