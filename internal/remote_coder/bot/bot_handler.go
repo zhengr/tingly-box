@@ -348,7 +348,8 @@ func (h *BotHandler) routeToAgent(hCtx HandlerContext, text string) error {
 			// Route the remaining text to the new agent
 			switch targetAgent {
 			case agentTinglyBox:
-				return h.handleSmartGuideMessage(hCtx, remainingText)
+				err := h.handleSmartGuideMessage(hCtx, remainingText)
+				return err
 			case agentClaudeCode:
 				projectPath, _, _ := h.getProjectPathForChat(hCtx)
 				h.handleAgentMessage(hCtx, agentClaudeCode, remainingText, projectPath)
@@ -489,6 +490,21 @@ func (h *BotHandler) handleSmartGuideMessage(hCtx HandlerContext, text string) e
 
 	// Get text content from response
 	responseText := response.GetTextContent()
+
+	// Sync the working directory from executor back to session if it changed
+	newProjectPath := h.smartGuideAgent.GetExecutor().GetWorkingDirectory()
+	if newProjectPath != projectPath {
+		// Update session context with new project path
+		if sessionID != "" {
+			h.sessionMgr.SetContext(sessionID, "project_path", newProjectPath)
+			logrus.WithFields(logrus.Fields{
+				"chatID":    hCtx.ChatID,
+				"sessionID": sessionID,
+				"oldPath":   projectPath,
+				"newPath":   newProjectPath,
+			}).Info("Updated session project path from smart guide")
+		}
+	}
 
 	// Send the response with meta header
 	h.sendTextWithReply(hCtx, h.formatResponseWithMeta(meta, responseText, behavior), hCtx.MessageID)
