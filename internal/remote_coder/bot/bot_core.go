@@ -223,17 +223,6 @@ func buildAuthConfig(setting BotSetting) imbot.AuthConfig {
 	}
 }
 
-func sleepWithContext(ctx context.Context, delay time.Duration) bool {
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
-	}
-}
-
 // getReplyTarget returns the reply target ID for the message.
 // Different platforms may use different IDs:
 // - Telegram: Recipient.ID (chat ID)

@@ -38,9 +38,8 @@ type BotHandler struct {
 	interaction      *imbot.InteractionHandler // New interaction handler
 	tbClient         tbclient.TBClient         // TB Client for model configuration
 
-	// Smart guide agent (@tb)
-	smartGuideAgent *smartguide2.TinglyBoxAgent
-	handoffManager  *smartguide2.HandoffManager
+	// Handoff manager for agent switching
+	handoffManager *smartguide2.HandoffManager
 
 	// runningCancel tracks cancel functions for active executions per chatID
 	runningCancel   map[string]context.CancelFunc
@@ -406,75 +405,75 @@ func (h *BotHandler) getProjectPathForChat(hCtx HandlerContext) (string, bool, e
 }
 
 // handleSmartGuideMessage handles a message for the smart guide agent
+// Creates a fresh agent instance for each call (disposable pattern)
 func (h *BotHandler) handleSmartGuideMessage(hCtx HandlerContext, text string) error {
-	// Lazy initialization of smart guide agent
-	if h.smartGuideAgent == nil {
-		logrus.Info("Initializing smart guide agent with TB Client")
+	logrus.WithFields(logrus.Fields{
+		"chatID": hCtx.ChatID,
+		"text":   text[:min(len(text), 50)],
+	}).Debug("Creating new smart guide agent instance")
 
-		// Create agent factory with TB Client
-		factory := smartguide2.NewAgentFactory(
-			smartguide2.LoadSmartGuideConfig(),
-			h.tbClient, // Pass TB Client (may be nil, will use fallback)
-		)
-
-		// Create agent with callback functions
-		agent, err := factory.CreateAgent(
-			// getStatusFunc callback
-			func(chatID string) (*smartguide2.StatusInfo, error) {
-				sessionID, _, _ := h.chatStore.GetSession(chatID)
-				projectPath, _, _ := h.chatStore.GetProjectPath(chatID)
-				workingDir, hasWD, _ := h.chatStore.GetBashCwd(chatID)
-				if !hasWD {
-					workingDir = ""
-				}
-
-				return &smartguide2.StatusInfo{
-					CurrentAgent:   "tingly-box",
-					SessionID:      sessionID,
-					ProjectPath:    projectPath,
-					WorkingDir:     workingDir,
-					HasRunningTask: false, // TODO: track running tasks
-					Whitelisted:    h.chatStore.IsWhitelisted(chatID),
-				}, nil
-			},
-			// getProjectFunc callback
-			func(chatID string) (string, bool, error) {
-				return h.chatStore.GetProjectPath(chatID)
-			},
-			// updateProjectFunc callback - updates project path in chat store
-			func(chatID string, projectPath string) error {
-				return h.chatStore.BindProject(chatID, "telegram", projectPath, hCtx.SenderID)
-			},
-		)
-
-		if err != nil {
-			logrus.WithError(err).Error("Failed to create smart guide agent")
-			h.SendText(hCtx, "⚠️ Failed to initialize Smart Guide.")
-			return nil
-		}
-
-		h.smartGuideAgent = agent
-		logrus.Info("Smart guide agent initialized successfully")
-	}
-
-	// Get project path for context, use default if not bound
+	// Get current project path from chat store
 	projectPath, _, _ := h.chatStore.GetProjectPath(hCtx.ChatID)
 	if projectPath == "" {
 		projectPath = h.getDefaultProjectPath()
 	}
 
-	// Set working directory (always set, even if using default)
-	h.smartGuideAgent.GetExecutor().SetWorkingDirectory(projectPath)
+	// Get session ID for meta
+	sessionID, _, _ := h.chatStore.GetSession(hCtx.ChatID)
+
+	// Create agent factory with TB Client
+	factory := smartguide2.NewAgentFactory(
+		smartguide2.LoadSmartGuideConfig(),
+		h.tbClient,
+	)
+
+	// Create a fresh agent instance for this message
+	agent, err := factory.CreateAgent(
+		// getStatusFunc callback
+		func(chatID string) (*smartguide2.StatusInfo, error) {
+			sessionID, _, _ := h.chatStore.GetSession(chatID)
+			projectPath, _, _ := h.chatStore.GetProjectPath(chatID)
+			workingDir, hasWD, _ := h.chatStore.GetBashCwd(chatID)
+			if !hasWD {
+				workingDir = projectPath
+			}
+
+			return &smartguide2.StatusInfo{
+				CurrentAgent:   "tingly-box",
+				SessionID:      sessionID,
+				ProjectPath:    projectPath,
+				WorkingDir:     workingDir,
+				HasRunningTask: false,
+				Whitelisted:    h.chatStore.IsWhitelisted(chatID),
+			}, nil
+		},
+		// getProjectFunc callback
+		func(chatID string) (string, bool, error) {
+			return h.chatStore.GetProjectPath(chatID)
+		},
+		// updateProjectFunc callback - updates project path in chat store
+		func(chatID string, newProjectPath string) error {
+			return h.chatStore.UpdateChat(chatID, func(chat *Chat) {
+				chat.ProjectPath = newProjectPath
+			})
+		},
+	)
+
+	if err != nil {
+		logrus.WithError(err).Error("Failed to create smart guide agent")
+		h.SendText(hCtx, "⚠️ Failed to initialize Smart Guide.")
+		return nil
+	}
+
+	// Set working directory from stored project path
+	agent.GetExecutor().SetWorkingDirectory(projectPath)
 
 	// Create tool context
 	toolCtx := &smartguide2.ToolContext{
 		ChatID:      hCtx.ChatID,
 		ProjectPath: projectPath,
-		SessionID:   "", // Will be set if needed
+		SessionID:   sessionID,
 	}
-
-	// Get session ID for meta
-	sessionID, _, _ := h.chatStore.GetSession(hCtx.ChatID)
 
 	// Build meta for response header
 	behavior := h.getOutputBehavior()
@@ -492,7 +491,7 @@ func (h *BotHandler) handleSmartGuideMessage(hCtx HandlerContext, text string) e
 	}
 
 	// Get response from agent
-	response, err := h.smartGuideAgent.ReplyWithContext(h.ctx, text, toolCtx)
+	response, err := agent.ReplyWithContext(h.ctx, text, toolCtx)
 	if err != nil {
 		logrus.WithError(err).Error("Smart guide agent failed")
 		h.SendText(hCtx, fmt.Sprintf("%s Error: %v", IconError, err))
@@ -502,15 +501,10 @@ func (h *BotHandler) handleSmartGuideMessage(hCtx HandlerContext, text string) e
 	// Get text content from response
 	responseText := response.GetTextContent()
 
-	// Sync the working directory from executor back to session if it changed
-	newProjectPath := h.smartGuideAgent.GetExecutor().GetWorkingDirectory()
+	// Check if working directory was changed by change_workdir tool
+	newProjectPath := agent.GetExecutor().GetWorkingDirectory()
 	if newProjectPath != projectPath {
-		// Update session context with new project path
-		if sessionID != "" {
-			h.sessionMgr.SetContext(sessionID, "project_path", newProjectPath)
-		}
-
-		// Persist to chat store so it survives across sessions
+		// Persist to chat store
 		if err := h.chatStore.UpdateChat(hCtx.ChatID, func(chat *Chat) {
 			chat.ProjectPath = newProjectPath
 		}); err != nil {
@@ -520,11 +514,10 @@ func (h *BotHandler) handleSmartGuideMessage(hCtx HandlerContext, text string) e
 			}).Warn("Failed to persist project path to chat store")
 		} else {
 			logrus.WithFields(logrus.Fields{
-				"chatID":    hCtx.ChatID,
-				"sessionID": sessionID,
-				"oldPath":   projectPath,
-				"newPath":   newProjectPath,
-			}).Info("Updated and persisted project path from smart guide")
+				"chatID":  hCtx.ChatID,
+				"oldPath": projectPath,
+				"newPath": newProjectPath,
+			}).Info("Updated project path from change_workdir")
 		}
 	}
 
