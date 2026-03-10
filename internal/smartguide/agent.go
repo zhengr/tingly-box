@@ -26,6 +26,9 @@ type AgentConfig struct {
 	SmartGuideConfig *SmartGuideConfig
 	TBClient         tbclient.TBClient // TB Client for getting model configuration
 	ToolExecutor     *ToolExecutor
+	// SmartGuide model configuration (required from bot setting)
+	SmartGuideProvider string // Provider UUID
+	SmartGuideModel    string // Model identifier
 	// Callback functions for internal tools
 	GetStatusFunc     func(chatID string) (*StatusInfo, error)
 	GetProjectFunc    func(chatID string) (string, bool, error)
@@ -47,38 +50,39 @@ func NewTinglyBoxAgent(config *AgentConfig) (*TinglyBoxAgent, error) {
 		executor = NewToolExecutor([]string{"cd", "ls", "pwd"})
 	}
 
-	// Get model configuration from TB Client
+	// Get model configuration from bot setting (required)
 	var modelConfig *anthropic.Config
 
+	// Validate that SmartGuide config is provided
+	if config.SmartGuideProvider == "" || config.SmartGuideModel == "" {
+		return nil, fmt.Errorf("smartguide_provider and smartguide_model are required in bot setting")
+	}
+
 	if config.TBClient != nil {
-		// Use TB Client to get default service configuration
+		// Get provider configuration via SelectModel
 		ctx := context.Background()
-
-		connection, err := config.TBClient.GetConnectionConfig(ctx)
+		modelCfg, err := config.TBClient.SelectModel(ctx, tbclient.ModelSelectionRequest{
+			ProviderUUID: config.SmartGuideProvider,
+			ModelID:      config.SmartGuideModel,
+		})
 		if err != nil {
-			return nil, fmt.Errorf("no connection info")
+			return nil, fmt.Errorf("failed to get model config for provider %s, model %s: %w", config.SmartGuideProvider, config.SmartGuideModel, err)
 		}
 
-		defaultRule, err := config.TBClient.GetDefaultRule(ctx)
-		if err != nil {
-			logrus.WithError(err).Warn("Failed to get default service from TB Client, falling back to config")
-			return nil, fmt.Errorf("failed to get default service from TB Client")
-		} else {
-			// Use TB Client configuration
-			modelConfig = &anthropic.Config{
-				Model:   defaultRule.RequestModel,
-				APIKey:  connection.APIKey,
-				BaseURL: connection.BaseURL,
-			}
-			logrus.WithFields(logrus.Fields{
-				"model":    defaultRule.RequestModel,
-				"base_url": connection.BaseURL,
-			}).Info("Using TB Client configuration for smartguide agent")
+		// Use bot setting configuration
+		modelConfig = &anthropic.Config{
+			Model:   modelCfg.ModelID,
+			APIKey:  modelCfg.APIKey,
+			BaseURL: modelCfg.BaseURL,
 		}
+		logrus.WithFields(logrus.Fields{
+			"provider": config.SmartGuideProvider,
+			"model":    config.SmartGuideModel,
+		}).Info("Using bot setting configuration for smartguide agent")
 	}
 
 	if modelConfig == nil {
-		return nil, fmt.Errorf("no model configuration found")
+		return nil, fmt.Errorf("failed to create model config: TBClient not available")
 	}
 
 	// Validate model configuration
@@ -175,15 +179,19 @@ func (a *TinglyBoxAgent) GetConfig() *SmartGuideConfig {
 
 // AgentFactory creates TinglyBoxAgent instances
 type AgentFactory struct {
-	config   *SmartGuideConfig
-	tbClient tbclient.TBClient
+	config             *SmartGuideConfig
+	tbClient           tbclient.TBClient
+	smartGuideProvider string // Provider UUID
+	smartGuideModel    string // Model identifier
 }
 
 // NewAgentFactory creates a new agent factory
-func NewAgentFactory(config *SmartGuideConfig, tbClient tbclient.TBClient) *AgentFactory {
+func NewAgentFactory(config *SmartGuideConfig, tbClient tbclient.TBClient, smartGuideProvider, smartGuideModel string) *AgentFactory {
 	return &AgentFactory{
-		config:   config,
-		tbClient: tbClient,
+		config:             config,
+		tbClient:           tbClient,
+		smartGuideProvider: smartGuideProvider,
+		smartGuideModel:    smartGuideModel,
 	}
 }
 
@@ -193,10 +201,12 @@ func (f *AgentFactory) CreateAgent(getStatusFunc func(chatID string) (*StatusInf
 	updateProjectFunc func(chatID string, projectPath string) error) (*TinglyBoxAgent, error) {
 
 	return NewTinglyBoxAgent(&AgentConfig{
-		SmartGuideConfig:  f.config,
-		TBClient:          f.tbClient,
-		GetStatusFunc:     getStatusFunc,
-		GetProjectFunc:    getProjectFunc,
-		UpdateProjectFunc: updateProjectFunc,
+		SmartGuideConfig:   f.config,
+		TBClient:           f.tbClient,
+		SmartGuideProvider: f.smartGuideProvider,
+		SmartGuideModel:    f.smartGuideModel,
+		GetStatusFunc:      getStatusFunc,
+		GetProjectFunc:     getProjectFunc,
+		UpdateProjectFunc:  updateProjectFunc,
 	})
 }
