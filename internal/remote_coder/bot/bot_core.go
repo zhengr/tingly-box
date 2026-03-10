@@ -53,7 +53,8 @@ Bot Commands:
 /join <group> - Add group to whitelist
 /mock <msg> - Test with mock agent (permission flow)
 
-All other messages are sent to Claude Code.`
+@cc to handoff control to Claude Code.
+@tb to handoff control to Tingly Box Smart Guide.`
 
 	groupHelpTemplate = `Group Chat ID: %s
 
@@ -66,7 +67,8 @@ Bot Commands:
 /status - Show session status
 /mock <msg> - Test with mock agent (permission flow)
 
-All other messages are sent to Claude Code.`
+@cc to handoff control to Claude Code.
+@tb to handoff control to Tingly Box Smart Guide.`
 )
 
 // Slash command constants with aliases
