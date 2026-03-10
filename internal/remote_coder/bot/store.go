@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/sirupsen/logrus"
 )
 
 // BotSetting represents bot configuration with platform-specific auth
@@ -27,8 +27,13 @@ type BotSetting struct {
 	BashAllowlist []string          `json:"bash_allowlist,omitempty"` // Optional bash command allowlist
 	DefaultCwd    string            `json:"default_cwd,omitempty"`    // Default working directory if no project bound
 	Enabled       bool              `json:"enabled"`                  // Whether this bot is enabled
-	CreatedAt     string            `json:"created_at,omitempty"`
-	UpdatedAt     string            `json:"updated_at,omitempty"`
+
+	// Output behavior settings
+	Debug   bool  `json:"debug,omitempty"`   // Show message IDs in output (chat_id, session_id, etc.)
+	Verbose *bool `json:"verbose,omitempty"` // Send intermediate messages (nil = true default)
+
+	CreatedAt string `json:"created_at,omitempty"`
+	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
 type Store struct {
@@ -191,6 +196,20 @@ func initSchema(db *sql.DB) error {
 		return err
 	}
 	if err := ensureColumn(db, "remote_coder_bot_settings", "name", "TEXT"); err != nil {
+		return err
+	}
+	if err := ensureColumn(db, "remote_coder_bot_settings", "default_cwd", "TEXT"); err != nil {
+		return err
+	}
+
+	// Add debug and verbose columns to v2 settings table
+	if err := ensureColumn(db, "remote_coder_bot_settings_v2", "debug", "INTEGER DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureColumn(db, "remote_coder_bot_settings_v2", "verbose", "INTEGER DEFAULT 1"); err != nil {
+		return err
+	}
+	if err := ensureColumn(db, "remote_coder_bot_settings_v2", "default_cwd", "TEXT"); err != nil {
 		return err
 	}
 

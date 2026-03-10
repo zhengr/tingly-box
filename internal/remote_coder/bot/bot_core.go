@@ -129,6 +129,7 @@ type ResponseMeta struct {
 	ChatID      string
 	UserID      string
 	SessionID   string
+	AgentType   string // Current agent identifier (e.g., "tingly-box", "claude")
 }
 
 // runBotWithSettings starts a bot using JSON file storage for chat state

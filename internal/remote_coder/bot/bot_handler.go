@@ -777,28 +777,38 @@ func (h *BotHandler) sendTextWithActionKeyboard(hCtx HandlerContext, text string
 }
 
 // formatResponseWithMeta adds project/session/user metadata to the response
-func (h *BotHandler) formatResponseWithMeta(meta ResponseMeta, response string) string {
+// behavior.Verbose controls whether processing messages are sent
+func (h *BotHandler) formatResponseWithMeta(meta ResponseMeta, response string, behavior OutputBehavior) string {
 	var buf strings.Builder
+
+	// Always show project path (shortened)
 	if meta.ProjectPath != "" {
-		shortPath := meta.ProjectPath
-		parts := strings.Split(meta.ProjectPath, string(filepath.Separator))
-		if len(parts) > 2 {
-			shortPath = filepath.Join(parts[len(parts)-2], parts[len(parts)-1])
-		}
-		buf.WriteString(fmt.Sprintf("📁 %s\n", shortPath))
-	}
-	if meta.ChatID != "" {
-		buf.WriteString(fmt.Sprintf("💬 %s\n", meta.ChatID))
-	}
-	if meta.UserID != "" {
-		buf.WriteString(fmt.Sprintf("👤 %s\n", meta.UserID))
-	}
-	if meta.SessionID != "" {
-		buf.WriteString(fmt.Sprintf("🔄 %s\n", meta.SessionID))
+		buf.WriteString(fmt.Sprintf(FormatProjectLine, IconProject, ShortenPath(meta.ProjectPath)))
 	}
 
-	buf.WriteString("━━━━━━━━━━━━━━━━━━━━\n\n")
+	// Show agent indicator
+	if meta.AgentType != "" {
+		buf.WriteString(fmt.Sprintf(FormatAgentLine, GetAgentIcon(meta.AgentType), GetAgentDisplayName(meta.AgentType)))
+	}
+
+	// Always show IDs for transparency
+	if meta.ChatID != "" {
+		buf.WriteString(fmt.Sprintf(FormatDebugLine, IconChat, meta.ChatID))
+	}
+	if meta.UserID != "" {
+		buf.WriteString(fmt.Sprintf(FormatDebugLine, IconUser, meta.UserID))
+	}
+	if meta.SessionID != "" {
+		buf.WriteString(fmt.Sprintf(FormatDebugLine, IconSession, ShortenID(meta.SessionID, 8)))
+	}
+
+	buf.WriteString(SeparatorLine + "\n\n")
 	return buf.String() + response
+}
+
+// getOutputBehavior returns the output behavior for this bot handler
+func (h *BotHandler) getOutputBehavior() OutputBehavior {
+	return h.botSetting.GetOutputBehavior()
 }
 
 // newStreamingMessageHandler creates a new streaming message handler
@@ -895,6 +905,7 @@ func (h *BotHandler) handleClaudeCodeMessage(hCtx HandlerContext, text string, p
 	// Build meta
 	meta := ResponseMeta{
 		ProjectPath: projectPath,
+		AgentType:   string(agentboot.AgentTypeClaude),
 		SessionID:   sessionID,
 		ChatID:      hCtx.ChatID,
 		UserID:      hCtx.SenderID,
@@ -915,7 +926,8 @@ func (h *BotHandler) handleClaudeCodeMessage(hCtx HandlerContext, text string, p
 	h.sessionMgr.SetRunning(sessionID)
 
 	// Send status message
-	h.sendTextWithReply(hCtx, h.formatResponseWithMeta(meta, "⏳ Processing..."), hCtx.MessageID)
+	behavior := h.getOutputBehavior()
+	h.sendTextWithReply(hCtx, h.formatResponseWithMeta(meta, "⏳ Processing...", behavior), hCtx.MessageID)
 
 	// Execute with context.Background() to avoid cancellation on reconnect
 	execCtx, cancel := context.WithCancel(context.Background())
@@ -1107,6 +1119,7 @@ func (h *BotHandler) handleMockAgentMessage(hCtx HandlerContext, text string, pr
 	// Build meta
 	meta := ResponseMeta{
 		ProjectPath: projectPath,
+		AgentType:   string(agentboot.AgentTypeMockAgent),
 		SessionID:   sessionID,
 		ChatID:      hCtx.ChatID,
 		UserID:      hCtx.SenderID,
@@ -1127,7 +1140,8 @@ func (h *BotHandler) handleMockAgentMessage(hCtx HandlerContext, text string, pr
 	h.sessionMgr.SetRunning(sessionID)
 
 	// Send status message
-	h.sendTextWithReply(hCtx, h.formatResponseWithMeta(meta, "🧪 Mock agent processing..."), hCtx.MessageID)
+	behavior := h.getOutputBehavior()
+	h.sendTextWithReply(hCtx, h.formatResponseWithMeta(meta, "🧪 Mock agent processing...", behavior), hCtx.MessageID)
 
 	// Execute with context
 	execCtx, cancel := context.WithCancel(context.Background())
