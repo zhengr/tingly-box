@@ -421,13 +421,14 @@ func (h *BotHandler) handleSmartGuideMessage(hCtx HandlerContext, text string) e
 		logrus.Info("Smart guide agent initialized successfully")
 	}
 
-	// Get project path for context
+	// Get project path for context, use default if not bound
 	projectPath, _, _ := h.chatStore.GetProjectPath(hCtx.ChatID)
-
-	// Set working directory if available
-	if projectPath != "" {
-		h.smartGuideAgent.GetExecutor().SetWorkingDirectory(projectPath)
+	if projectPath == "" {
+		projectPath = h.getDefaultProjectPath()
 	}
+
+	// Set working directory (always set, even if using default)
+	h.smartGuideAgent.GetExecutor().SetWorkingDirectory(projectPath)
 
 	// Create tool context
 	toolCtx := &smartguide.ToolContext{
@@ -527,11 +528,10 @@ func (h *BotHandler) handleGroupMessage(hCtx HandlerContext) {
 
 // handleMediaMessage handles messages with media attachments
 func (h *BotHandler) handleMediaMessage(hCtx HandlerContext) {
-	// Get project path for storage
+	// Get project path for storage, use default if not bound
 	projectPath, ok := h.getProjectPath(hCtx)
 	if !ok {
-		h.SendText(hCtx, "No project bound. Please bind a project first.")
-		return
+		projectPath = h.getDefaultProjectPath()
 	}
 
 	// Set platform-specific token on FileStore if needed
@@ -608,6 +608,32 @@ func (h *BotHandler) getProjectPath(hCtx HandlerContext) (string, bool) {
 		return getProjectPathForGroup(h.chatStore, hCtx.ChatID, string(hCtx.Platform))
 	}
 	return "", false
+}
+
+// getDefaultProjectPath returns the default project path for the bot
+// Priority: 1. DefaultCwd from bot setting, 2. Current working directory, 3. User home directory
+func (h *BotHandler) getDefaultProjectPath() string {
+	// 1. Check bot setting's DefaultCwd
+	if h.botSetting.DefaultCwd != "" {
+		expanded, err := ExpandPath(h.botSetting.DefaultCwd)
+		if err == nil {
+			return expanded
+		}
+		logrus.WithError(err).Warnf("Failed to expand DefaultCwd: %s", h.botSetting.DefaultCwd)
+	}
+
+	// 2. Use current working directory
+	if cwd, err := os.Getwd(); err == nil {
+		return cwd
+	}
+
+	// 3. Fallback to user home directory
+	if home, err := os.UserHomeDir(); err == nil {
+		return home
+	}
+
+	// Ultimate fallback
+	return "/"
 }
 
 // handleSlashCommands handles slash commands
@@ -835,9 +861,9 @@ func (h *BotHandler) handleClaudeCodeMessage(hCtx HandlerContext, text string, p
 			}
 		}
 	}
+	// Use default project path if not bound
 	if projectPath == "" {
-		h.SendText(hCtx, "Project path is required. Use "+cmdBindPrimary+" <project_path> first.")
-		return
+		projectPath = h.getDefaultProjectPath()
 	}
 
 	// Build meta

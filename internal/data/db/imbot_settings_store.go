@@ -28,6 +28,7 @@ type Settings struct {
 	ProxyURL      string            `json:"proxy_url,omitempty"`
 	ChatIDLock    string            `json:"chat_id,omitempty"`
 	BashAllowlist []string          `json:"bash_allowlist,omitempty"`
+	DefaultCwd    string            `json:"default_cwd,omitempty"` // Default working directory
 	Enabled       bool              `json:"enabled"`
 	CreatedAt     time.Time         `json:"created_at,omitempty"`
 	UpdatedAt     time.Time         `json:"updated_at,omitempty"`
@@ -173,6 +174,7 @@ func (s *ImBotSettingsStore) CreateSettings(settings Settings) (Settings, error)
 		ProxyURL:      settings.ProxyURL,
 		ChatIDLock:    settings.ChatIDLock,
 		BashAllowlist: allowlistJSON,
+		DefaultCwd:    settings.DefaultCwd,
 		Enabled:       settings.Enabled,
 		CreatedAt:     settings.CreatedAt,
 		UpdatedAt:     settings.UpdatedAt,
@@ -219,6 +221,7 @@ func (s *ImBotSettingsStore) UpdateSettings(uuid string, settings Settings) erro
 			"proxy_url":      settings.ProxyURL,
 			"chat_id_lock":   settings.ChatIDLock,
 			"bash_allowlist": allowlistJSON,
+			"default_cwd":    settings.DefaultCwd,
 			"enabled":        settings.Enabled,
 			"updated_at":     settings.UpdatedAt,
 		})
@@ -282,6 +285,7 @@ func recordToSettings(record ImBotSettingsRecord) (Settings, error) {
 		AuthType:   record.AuthType,
 		ProxyURL:   record.ProxyURL,
 		ChatIDLock: record.ChatIDLock,
+		DefaultCwd: record.DefaultCwd,
 		Enabled:    record.Enabled,
 		CreatedAt:  record.CreatedAt,
 		UpdatedAt:  record.UpdatedAt,

@@ -758,6 +758,7 @@ func runStandaloneBot(ctx context.Context, setting db.Settings, dataPath string)
 		ProxyURL:      setting.ProxyURL,
 		ChatIDLock:    setting.ChatIDLock,
 		BashAllowlist: setting.BashAllowlist,
+		DefaultCwd:    setting.DefaultCwd,
 		Enabled:       setting.Enabled,
 	}
 

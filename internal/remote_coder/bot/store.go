@@ -25,6 +25,7 @@ type BotSetting struct {
 	ProxyURL      string            `json:"proxy_url,omitempty"`      // Optional proxy URL
 	ChatIDLock    string            `json:"chat_id,omitempty"`        // Optional chat ID lock
 	BashAllowlist []string          `json:"bash_allowlist,omitempty"` // Optional bash command allowlist
+	DefaultCwd    string            `json:"default_cwd,omitempty"`    // Default working directory if no project bound
 	Enabled       bool              `json:"enabled"`                  // Whether this bot is enabled
 	CreatedAt     string            `json:"created_at,omitempty"`
 	UpdatedAt     string            `json:"updated_at,omitempty"`

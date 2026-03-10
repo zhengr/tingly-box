@@ -14,6 +14,7 @@ type ImBotSettingsRecord struct {
 	ProxyURL      string    `gorm:"column:proxy_url"`
 	ChatIDLock    string    `gorm:"column:chat_id_lock"`
 	BashAllowlist string    `gorm:"column:bash_allowlist;type:text"` // JSON array string
+	DefaultCwd    string    `gorm:"column:default_cwd"`              // Default working directory
 	Enabled       bool      `gorm:"column:enabled;index:idx_enabled"`
 	CreatedAt     time.Time `gorm:"column:created_at"`
 	UpdatedAt     time.Time `gorm:"column:updated_at"`

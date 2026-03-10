@@ -108,6 +108,7 @@ func (m *Manager) Start(parentCtx context.Context, uuid string) error {
 		ProxyURL:      record.ProxyURL,
 		ChatIDLock:    record.ChatIDLock,
 		BashAllowlist: record.BashAllowlist,
+		DefaultCwd:    record.DefaultCwd,
 		Enabled:       record.Enabled,
 	}
 
