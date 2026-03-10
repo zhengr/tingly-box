@@ -98,7 +98,7 @@ func (e *ToolExecutor) GetAllowedCommands() []string {
 
 // GetStatusTool returns the current bot status
 type GetStatusTool struct {
-	executor *ToolExecutor
+	executor      *ToolExecutor
 	getStatusFunc func(chatID string) (*StatusInfo, error)
 }
 
@@ -152,7 +152,7 @@ func (t *GetStatusTool) Call(ctx context.Context, kwargs map[string]any) (*tool.
 
 // GetProjectTool returns the current project binding info
 type GetProjectTool struct {
-	executor *ToolExecutor
+	executor       *ToolExecutor
 	getProjectFunc func(chatID string) (string, bool, error)
 }
 
@@ -190,14 +190,14 @@ func (t *GetProjectTool) Call(ctx context.Context, kwargs map[string]any) (*tool
 
 // BashCDTool changes directory
 type BashCDTool struct {
-	executor       *ToolExecutor
+	executor          *ToolExecutor
 	updateProjectFunc func(chatID string, projectPath string) error // Optional: updates project path in chat store
 }
 
 // NewBashCDTool creates a new BashCDTool
 func NewBashCDTool(executor *ToolExecutor, updateProjectFunc func(chatID string, projectPath string) error) *BashCDTool {
 	return &BashCDTool{
-		executor:         executor,
+		executor:          executor,
 		updateProjectFunc: updateProjectFunc,
 	}
 }

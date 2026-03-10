@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+	smartguide2 "github.com/tingly-dev/tingly-box/internal/smartguide"
 
 	"github.com/tingly-dev/tingly-box/agentboot"
 	"github.com/tingly-dev/tingly-box/agentboot/ask"
@@ -18,7 +19,6 @@ import (
 	mock "github.com/tingly-dev/tingly-box/agentboot/mockagent"
 	"github.com/tingly-dev/tingly-box/imbot"
 	"github.com/tingly-dev/tingly-box/internal/remote_coder/session"
-	"github.com/tingly-dev/tingly-box/internal/remote_coder/smartguide"
 	"github.com/tingly-dev/tingly-box/internal/remote_coder/summarizer"
 	"github.com/tingly-dev/tingly-box/internal/tbclient"
 )
@@ -36,11 +36,11 @@ type BotHandler struct {
 	imPrompter       *IMPrompter
 	fileStore        *FileStore
 	interaction      *imbot.InteractionHandler // New interaction handler
-	tbClient         tbclient.TBClient          // TB Client for model configuration
+	tbClient         tbclient.TBClient         // TB Client for model configuration
 
 	// Smart guide agent (@tb)
-	smartGuideAgent  *smartguide.TinglyBoxAgent
-	handoffManager   *smartguide.HandoffManager
+	smartGuideAgent *smartguide2.TinglyBoxAgent
+	handoffManager  *smartguide2.HandoffManager
 
 	// runningCancel tracks cancel functions for active executions per chatID
 	runningCancel   map[string]context.CancelFunc
@@ -108,7 +108,7 @@ func NewBotHandler(
 	}
 
 	// Initialize handoff manager
-	handoffMgr := smartguide.NewHandoffManager()
+	handoffMgr := smartguide2.NewHandoffManager()
 
 	return &BotHandler{
 		ctx:                 ctx,
@@ -291,7 +291,7 @@ func (h *BotHandler) handleHandoff(hCtx HandlerContext, toAgent agentboot.AgentT
 	sessionID, _, _ := h.chatStore.GetSession(hCtx.ChatID)
 
 	// Create handoff state
-	handoffState := &smartguide.HandoffState{
+	handoffState := &smartguide2.HandoffState{
 		FromAgent:   string(fromAgent),
 		ToAgent:     string(toAgent),
 		Timestamp:   time.Now(),
@@ -320,13 +320,13 @@ func (h *BotHandler) handleHandoff(hCtx HandlerContext, toAgent agentboot.AgentT
 // routeToAgent routes a message to the appropriate agent based on current_agent
 func (h *BotHandler) routeToAgent(hCtx HandlerContext, text string) error {
 	// Check for handoff commands first (supports "@cc help me" format)
-	if toAgent, isHandoff, remainingText := smartguide.DetectHandoffCommand(text); isHandoff {
+	if toAgent, isHandoff, remainingText := smartguide2.DetectHandoffCommand(text); isHandoff {
 		// Determine target agent by comparing string values
 		var targetAgent agentboot.AgentType
 		switch string(toAgent) {
-		case smartguide.AgentTypeTinglyBox:
+		case smartguide2.AgentTypeTinglyBox:
 			targetAgent = agentTinglyBox
-		case smartguide.AgentTypeClaudeCode:
+		case smartguide2.AgentTypeClaudeCode:
 			targetAgent = agentClaudeCode
 		default:
 			return fmt.Errorf("unknown target agent: %s", toAgent)
@@ -340,8 +340,8 @@ func (h *BotHandler) routeToAgent(hCtx HandlerContext, text string) error {
 		// If there's remaining text, process it immediately with the new agent
 		if remainingText != "" {
 			logrus.WithFields(logrus.Fields{
-				"chatID":       hCtx.ChatID,
-				"targetAgent":  targetAgent,
+				"chatID":        hCtx.ChatID,
+				"targetAgent":   targetAgent,
 				"remainingText": remainingText,
 			}).Info("Processing remaining text after handoff")
 
@@ -400,15 +400,15 @@ func (h *BotHandler) handleSmartGuideMessage(hCtx HandlerContext, text string) e
 		logrus.Info("Initializing smart guide agent with TB Client")
 
 		// Create agent factory with TB Client
-		factory := smartguide.NewAgentFactory(
-			smartguide.LoadSmartGuideConfig(),
+		factory := smartguide2.NewAgentFactory(
+			smartguide2.LoadSmartGuideConfig(),
 			h.tbClient, // Pass TB Client (may be nil, will use fallback)
 		)
 
 		// Create agent with callback functions
 		agent, err := factory.CreateAgent(
 			// getStatusFunc callback
-			func(chatID string) (*smartguide.StatusInfo, error) {
+			func(chatID string) (*smartguide2.StatusInfo, error) {
 				sessionID, _, _ := h.chatStore.GetSession(chatID)
 				projectPath, _, _ := h.chatStore.GetProjectPath(chatID)
 				workingDir, hasWD, _ := h.chatStore.GetBashCwd(chatID)
@@ -416,7 +416,7 @@ func (h *BotHandler) handleSmartGuideMessage(hCtx HandlerContext, text string) e
 					workingDir = ""
 				}
 
-				return &smartguide.StatusInfo{
+				return &smartguide2.StatusInfo{
 					CurrentAgent:   "tingly-box",
 					SessionID:      sessionID,
 					ProjectPath:    projectPath,
@@ -455,7 +455,7 @@ func (h *BotHandler) handleSmartGuideMessage(hCtx HandlerContext, text string) e
 	h.smartGuideAgent.GetExecutor().SetWorkingDirectory(projectPath)
 
 	// Create tool context
-	toolCtx := &smartguide.ToolContext{
+	toolCtx := &smartguide2.ToolContext{
 		ChatID:      hCtx.ChatID,
 		ProjectPath: projectPath,
 		SessionID:   "", // Will be set if needed
