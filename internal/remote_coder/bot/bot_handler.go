@@ -428,10 +428,12 @@ func (h *BotHandler) handleSmartGuideMessage(hCtx HandlerContext, text string) e
 	// Get session ID for meta
 	sessionID, _, _ := h.chatStore.GetSession(hCtx.ChatID)
 
-	// Create agent factory with TB Client
+	// Create agent factory with TB Client and SmartGuide config
 	factory := smartguide2.NewAgentFactory(
 		smartguide2.LoadSmartGuideConfig(),
 		h.tbClient,
+		h.botSetting.SmartGuideProvider,
+		h.botSetting.SmartGuideModel,
 	)
 
 	// Create a fresh agent instance for this message

@@ -26,6 +26,10 @@ type BotSetting struct {
 	Debug   bool  `json:"debug,omitempty"`   // Show message IDs in output (chat_id, session_id, etc.)
 	Verbose *bool `json:"verbose,omitempty"` // Send intermediate messages (nil = true default)
 
+	// SmartGuide model configuration (required for @tb agent)
+	SmartGuideProvider string `json:"smartguide_provider,omitempty"` // Provider UUID
+	SmartGuideModel    string `json:"smartguide_model,omitempty"`    // Model identifier
+
 	CreatedAt string `json:"created_at,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
 }

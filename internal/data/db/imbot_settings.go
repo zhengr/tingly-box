@@ -21,6 +21,10 @@ type ImBotSettingsRecord struct {
 	Debug   bool  `gorm:"column:debug;default:false"`  // Show message IDs in output
 	Verbose *bool `gorm:"column:verbose;default:true"` // Send intermediate messages (nil = true)
 
+	// SmartGuide model configuration (required for @tb agent)
+	SmartGuideProvider string `gorm:"column:smartguide_provider"` // Provider UUID
+	SmartGuideModel    string `gorm:"column:smartguide_model"`    // Model identifier
+
 	CreatedAt time.Time `gorm:"column:created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at"`
 }
