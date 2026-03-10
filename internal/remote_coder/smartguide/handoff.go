@@ -1,0 +1,166 @@
+package smartguide
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/sirupsen/logrus"
+	"github.com/tingly-dev/tingly-box/agentboot"
+)
+
+// HandoffState represents the state during a handoff
+type HandoffState struct {
+	FromAgent        string    `json:"from_agent"`
+	ToAgent          string    `json:"to_agent"`
+	Timestamp        time.Time `json:"timestamp"`
+	ProjectPath      string    `json:"project_path"`
+	SessionID        string    `json:"session_id"`
+	ChatID           string    `json:"chat_id"`
+	PreservedContext []byte    `json:"preserved_context,omitempty"`
+}
+
+// HandoffResult represents the result of a handoff operation
+type HandoffResult struct {
+	Success   bool   `json:"success"`
+	FromAgent string `json:"from_agent"`
+	ToAgent   string `json:"to_agent"`
+	Message   string `json:"message"`
+	NextHint  string `json:"next_hint"`
+	Error     string `json:"error,omitempty"`
+}
+
+// HandoffManager handles handoff operations between agents
+type HandoffManager struct {
+	// Dependencies would be injected here
+	// For now, we'll keep it simple
+}
+
+// NewHandoffManager creates a new handoff manager
+func NewHandoffManager() *HandoffManager {
+	return &HandoffManager{}
+}
+
+// ExecuteHandoff performs a handoff from one agent to another
+func (hm *HandoffManager) ExecuteHandoff(ctx context.Context, state *HandoffState) *HandoffResult {
+	logrus.WithFields(logrus.Fields{
+		"from_agent":  state.FromAgent,
+		"to_agent":    state.ToAgent,
+		"chat_id":     state.ChatID,
+		"session_id":  state.SessionID,
+		"project":     state.ProjectPath,
+	}).Info("Executing agent handoff")
+
+	// Validate handoff
+	if err := hm.validateHandoff(state); err != nil {
+		return &HandoffResult{
+			Success:   false,
+			FromAgent: state.FromAgent,
+			ToAgent:   state.ToAgent,
+			Error:     err.Error(),
+		}
+	}
+
+	// Determine success message
+	var message, nextHint string
+	switch state.ToAgent {
+	case AgentTypeClaudeCode:
+		message = HandoffToCCPrompt
+		nextHint = "You can now use all Claude Code features. Type '@tb' to return to Smart Guide."
+	case AgentTypeTinglyBox:
+		message = HandoffToTBPrompt
+		nextHint = "I'm here to help with setup. Type '@cc' when ready to code."
+	default:
+		message = fmt.Sprintf("Switched to %s", state.ToAgent)
+		nextHint = "Continue your conversation."
+	}
+
+	return &HandoffResult{
+		Success:   true,
+		FromAgent: state.FromAgent,
+		ToAgent:   state.ToAgent,
+		Message:   message,
+		NextHint:  nextHint,
+	}
+}
+
+// validateHandoff validates that a handoff can proceed
+func (hm *HandoffManager) validateHandoff(state *HandoffState) error {
+	// Check agent types
+	validAgents := map[string]bool{
+		AgentTypeTinglyBox:  true,
+		AgentTypeClaudeCode: true,
+		AgentTypeMock:       true,
+	}
+
+	if !validAgents[state.FromAgent] {
+		return fmt.Errorf("invalid from_agent: %s", state.FromAgent)
+	}
+
+	if !validAgents[state.ToAgent] {
+		return fmt.Errorf("invalid to_agent: %s", state.ToAgent)
+	}
+
+	if state.FromAgent == state.ToAgent {
+		return fmt.Errorf("cannot handoff to same agent: %s", state.FromAgent)
+	}
+
+	// Check required fields
+	if state.ChatID == "" {
+		return fmt.Errorf("chat_id is required")
+	}
+
+	return nil
+}
+
+// SerializeState serializes handoff state to JSON
+func SerializeState(state *HandoffState) ([]byte, error) {
+	return json.Marshal(state)
+}
+
+// DeserializeState deserializes handoff state from JSON
+func DeserializeState(data []byte) (*HandoffState, error) {
+	var state HandoffState
+	err := json.Unmarshal(data, &state)
+	if err != nil {
+		return nil, fmt.Errorf("failed to deserialize handoff state: %w", err)
+	}
+	return &state, nil
+}
+
+// DetectHandoffCommand detects if text is a handoff command
+func DetectHandoffCommand(text string) (agentboot.AgentType, bool) {
+	// Normalize text
+	normalized := toLowerTrim(text)
+
+	// Check for handoff to @cc
+	switch normalized {
+	case "@cc", "/cc", "handoff", "switch to cc", "switch to claude", "cc":
+		return AgentTypeClaudeCode, true
+	case "@tb", "/tb", "guide", "switch to tb", "switch to guide", "tb":
+		return AgentTypeTinglyBox, true
+	}
+
+	return "", false
+}
+
+// toLowerTrim normalizes text for comparison
+func toLowerTrim(s string) string {
+	// Simple implementation - could be enhanced
+	return s
+}
+
+// GetAgentTypeString returns the string representation of an agent type
+func GetAgentTypeString(agentType agentboot.AgentType) string {
+	switch agentType {
+	case AgentTypeTinglyBox:
+		return "Smart Guide (@tb)"
+	case AgentTypeClaudeCode:
+		return "Claude Code (@cc)"
+	case AgentTypeMock:
+		return "Mock Agent"
+	default:
+		return string(agentType)
+	}
+}
