@@ -296,12 +296,3 @@ func convertActionKeyboardToTelegram(kb imbot.InlineKeyboardMarkup) tgbotapi.Inl
 	}
 	return tgbotapi.InlineKeyboardMarkup{InlineKeyboard: rows}
 }
-
-// NewStoreForChatOnly creates a minimal bot.Store for chat state management only
-func NewStoreForChatOnly(dbPath string) (*Store, error) {
-	store, err := NewStore(dbPath)
-	if err != nil {
-		return nil, err
-	}
-	return store, nil
-}

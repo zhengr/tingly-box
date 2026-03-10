@@ -4,8 +4,54 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/tingly-dev/tingly-box/pkg/jsonstore"
 )
+
+// BotSetting represents bot configuration with platform-specific auth
+type BotSetting struct {
+	UUID          string            `json:"uuid,omitempty"`           // UUID for bot identification
+	Name          string            `json:"name,omitempty"`           // User-defined name for the bot
+	Token         string            `json:"token,omitempty"`          // Legacy: for backward compatibility
+	Platform      string            `json:"platform"`                 // Platform identifier
+	AuthType      string            `json:"auth_type"`                // Auth type: token, oauth, qr
+	Auth          map[string]string `json:"auth"`                     // Dynamic auth fields based on platform
+	ProxyURL      string            `json:"proxy_url,omitempty"`      // Optional proxy URL
+	ChatIDLock    string            `json:"chat_id,omitempty"`        // Optional chat ID lock
+	BashAllowlist []string          `json:"bash_allowlist,omitempty"` // Optional bash command allowlist
+	DefaultCwd    string            `json:"default_cwd,omitempty"`    // Default working directory if no project bound
+	Enabled       bool              `json:"enabled"`                  // Whether this bot is enabled
+
+	// Output behavior settings
+	Debug   bool  `json:"debug,omitempty"`   // Show message IDs in output (chat_id, session_id, etc.)
+	Verbose *bool `json:"verbose,omitempty"` // Send intermediate messages (nil = true default)
+
+	CreatedAt string `json:"created_at,omitempty"`
+	UpdatedAt string `json:"updated_at,omitempty"`
+}
+
+// Chat represents all state associated with a chat (direct or group)
+type Chat struct {
+	ChatID      string `json:"chat_id"`
+	Platform    string `json:"platform"`
+	ProjectPath string `json:"project_path,omitempty"`
+	OwnerID     string `json:"owner_id,omitempty"`
+	SessionID   string `json:"session_id,omitempty"`
+
+	// Group-specific
+	IsWhitelisted bool   `json:"is_whitelisted"`
+	WhitelistedBy string `json:"whitelisted_by,omitempty"`
+
+	// Bash state
+	BashCwd string `json:"bash_cwd,omitempty"`
+
+	// Agent state (for smart guide handoff)
+	CurrentAgent string `json:"current_agent,omitempty"` // "tingly-box" or "claude"
+	AgentState   []byte `json:"agent_state,omitempty"`   // JSON-encoded agent-specific state
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
 
 // ChatStoreInterface defines the interface for chat persistence
 // This allows both SQLite-based ChatStore and JSON-based ChatStoreJSON to be used interchangeably
@@ -173,7 +219,7 @@ func (s *ChatStoreJSON) UpdateChat(chatID string, fn func(*Chat)) error {
 		return fmt.Errorf("update function is required")
 	}
 
-	return s.store.Update(chatID, func(chat *Chat) *Chat {
+	err := s.store.Update(chatID, func(chat *Chat) *Chat {
 		if chat == nil {
 			return nil
 		}
@@ -182,6 +228,18 @@ func (s *ChatStoreJSON) UpdateChat(chatID string, fn func(*Chat)) error {
 		fn(chat)
 		return chat
 	})
+
+	// Immediately persist to disk
+	if err == nil {
+		chat := s.store.Get(chatID)
+		if chat != nil {
+			if saveErr := s.store.Set(chatID, chat); saveErr != nil {
+				logrus.WithError(saveErr).Error("Failed to mark chat as dirty for save")
+			}
+		}
+	}
+
+	return err
 }
 
 // ============== Project Binding ==============
