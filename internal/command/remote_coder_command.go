@@ -24,6 +24,7 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/remote_coder/session"
 	"github.com/tingly-dev/tingly-box/internal/remote_coder/summarizer"
 	serverconfig "github.com/tingly-dev/tingly-box/internal/server/config"
+	"github.com/tingly-dev/tingly-box/internal/tbclient"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
@@ -694,7 +695,7 @@ func botStartCommand(appManager *AppManager) *cobra.Command {
 			fmt.Println("Press Ctrl+C to stop the bot.")
 			fmt.Println()
 
-			return runStandaloneBot(cmd.Context(), setting, dataPath)
+			return runStandaloneBot(cmd.Context(), appManager, setting, dataPath)
 		},
 	}
 
@@ -747,7 +748,7 @@ func selectBotInteractively(store *db.ImBotSettingsStore) (string, error) {
 }
 
 // runStandaloneBot runs a single bot in standalone mode
-func runStandaloneBot(ctx context.Context, setting db.Settings, dataPath string) error {
+func runStandaloneBot(ctx context.Context, appManager *AppManager, setting db.Settings, dataPath string) error {
 	botSetting := bot.BotSetting{
 		UUID:          setting.UUID,
 		Name:          setting.Name,
@@ -786,11 +787,11 @@ func runStandaloneBot(ctx context.Context, setting db.Settings, dataPath string)
 	chatStorePath := filepath.Join(dataPath, "bot_chats.json")
 
 	// Run the bot
-	return runBotWithSettingsInternal(ctx, botSetting, chatStorePath, sessionMgr, agentBoot)
+	return runBotWithSettingsInternal(ctx, appManager, botSetting, chatStorePath, sessionMgr, agentBoot)
 }
 
 // runBotWithSettingsInternal is an internal wrapper that calls the bot runner
-func runBotWithSettingsInternal(ctx context.Context, setting bot.BotSetting, dataPath string, sessionMgr *session.Manager, agentBoot *agentboot.AgentBoot) error {
+func runBotWithSettingsInternal(ctx context.Context, appManager *AppManager, setting bot.BotSetting, dataPath string, sessionMgr *session.Manager, agentBoot *agentboot.AgentBoot) error {
 	// Create a JSON-based chat store
 	chatStore, err := bot.NewChatStoreJSON(dataPath)
 	if err != nil {
@@ -829,8 +830,31 @@ func runBotWithSettingsInternal(ctx context.Context, setting bot.BotSetting, dat
 		return fmt.Errorf("failed to start %s bot: %w", setting.Platform, err)
 	}
 
+	// Create TBClient for smartguide agent if appManager is available
+	var tbClient tbclient.TBClient
+	if appManager != nil && appManager.AppConfig() != nil {
+		cfg := appManager.AppConfig()
+		configDir := cfg.ConfigDir()
+
+		// Create provider store
+		providerStore, err := db.NewProviderStore(configDir)
+		if err != nil {
+			logrus.WithError(err).Warn("Failed to create provider store for TBClient, smartguide will use fallback config")
+		} else {
+			// Get server port
+			serverPort := cfg.GetServerPort()
+			if serverPort == 0 {
+				serverPort = 12580
+			}
+
+			// Create TBClient with nil router (not needed for GetDefaultService/GetConnectionConfig)
+			tbClient = tbclient.NewTBClient(cfg, providerStore, nil, "localhost", serverPort)
+			logrus.WithField("serverPort", serverPort).Info("Created TBClient for smartguide agent")
+		}
+	}
+
 	// Register unified message handler
-	handler := bot.NewBotHandler(ctx, setting, chatStore, sessionMgr, agentBoot, summaryEngine, directoryBrowser, manager, nil)
+	handler := bot.NewBotHandler(ctx, setting, chatStore, sessionMgr, agentBoot, summaryEngine, directoryBrowser, manager, tbClient)
 	manager.OnMessage(handler.HandleMessage)
 
 	if err := manager.Start(ctx); err != nil {
