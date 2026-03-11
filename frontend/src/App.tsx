@@ -35,6 +35,9 @@ const UserPage = lazy(() => import('./pages/prompt/UserPage'));
 const SkillPage = lazy(() => import('./pages/prompt/SkillPage'));
 const CommandPage = lazy(() => import('./pages/prompt/CommandPage'));
 
+// Scenario Recordings page
+const ScenarioRecordingsPage = lazy(() => import('./pages/scenario/ScenarioRecordingsPage'));
+
 // Remote Control page
 const RemoteCoderPage = lazy(() => import('./pages/remote-coder/RemoteCoderPage'));
 const RemoteCoderSessionsPage = lazy(() => import('./pages/remote-coder/RemoteCoderSessionsPage'));
@@ -306,6 +309,8 @@ function AppContent() {
                     <Route path="/prompt/user" element={<UserPage />} />
                     <Route path="/prompt/skill" element={<SkillPage />} />
                     <Route path="/prompt/command" element={<CommandPage />} />
+                    {/* Scenario Recordings */}
+                    <Route path="/scenario/recordings" element={<ScenarioRecordingsPage />} />
                     {/* Remote Control routes */}
                     <Route path="/remote-coder" element={<Navigate to="/remote-coder/chat" replace />} />
                     <Route path="/remote-coder/chat" element={<RemoteCoderPage />} />

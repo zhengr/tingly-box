@@ -1227,6 +1227,40 @@ export const api = {
             return { success: false, error: error.message };
         }
     },
+
+    // Recordings API
+    listRecordings: async (filters?: { scenario?: string; provider?: string; date?: string }): Promise<any> => {
+        const params = new URLSearchParams();
+        if (filters?.scenario) params.append('scenario', filters.scenario);
+        if (filters?.provider) params.append('provider', filters.provider);
+        if (filters?.date) params.append('date', filters.date);
+        const queryString = params.toString();
+        return fetchUIAPI(`/recordings${queryString ? `?${queryString}` : ''}`);
+    },
+
+    getRecordingDetails: async (scenario: string, provider: string, date: string, hour: string): Promise<any> => {
+        return fetchUIAPI(`/recordings/${scenario}/${provider}/${date}/${hour}`);
+    },
+
+    getRecordingEntries: async (
+        scenario: string,
+        provider: string,
+        date: string,
+        hour: string,
+        options?: { limit?: number; offset?: number }
+    ): Promise<any> => {
+        const params = new URLSearchParams();
+        if (options?.limit) params.append('limit', options.limit.toString());
+        if (options?.offset) params.append('offset', options.offset.toString());
+        const queryString = params.toString();
+        return fetchUIAPI(`/recordings/${scenario}/${provider}/${date}/${hour}/entries${queryString ? `?${queryString}` : ''}`);
+    },
+
+    deleteRecording: async (scenario: string, provider: string, date: string, hour: string): Promise<any> => {
+        return fetchUIAPI(`/recordings/${scenario}/${provider}/${date}/${hour}`, {
+            method: 'DELETE',
+        });
+    },
 };
 
 export default api;
