@@ -6,9 +6,10 @@ import "github.com/anthropics/anthropic-sdk-go"
 type APIStyle string
 
 const (
-	APIStyleOpenAI    APIStyle = "openai"
-	APIStyleAnthropic APIStyle = "anthropic"
-	APIStyleGoogle    APIStyle = "google"
+	APIStyleOpenAI          APIStyle = "openai"
+	APIStyleAnthropic       APIStyle = "anthropic"
+	APIStyleGoogle          APIStyle = "google"
+	APIStyleOpenAIResponses APIStyle = "openai_responses" // Internal: for OpenAI Responses API recording
 )
 
 // ChatGPTBackendAPIBase is the API base URL for ChatGPT/Codex OAuth provider
