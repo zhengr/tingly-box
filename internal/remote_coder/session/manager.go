@@ -123,6 +123,10 @@ func (m *Manager) CreateWith(chatID, agent, project string) *Session {
 		session.ID, chatID, agent, project, session.ExpiresAt.Format(time.RFC3339))
 	if m.store != nil {
 		_ = m.store.Set(session.ID, session)
+		// Force immediate write to disk
+		if jsonStore, ok := m.store.(*SessionStoreJSON); ok {
+			_ = jsonStore.ForceSave()
+		}
 	}
 
 	return session
