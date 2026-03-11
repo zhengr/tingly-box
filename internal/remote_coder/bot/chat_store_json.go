@@ -40,7 +40,8 @@ type Chat struct {
 	Platform    string `json:"platform"`
 	ProjectPath string `json:"project_path,omitempty"`
 	OwnerID     string `json:"owner_id,omitempty"`
-	SessionID   string `json:"session_id,omitempty"`
+
+	// Session removed - sessions are now managed by SessionManager with (ChatID, Agent, Project) binding
 
 	// Group-specific
 	IsWhitelisted bool   `json:"is_whitelisted"`
@@ -83,12 +84,6 @@ type ChatStoreInterface interface {
 
 	// ListChatsByOwner lists all chats owned by a user
 	ListChatsByOwner(ownerID, platform string) ([]*Chat, error)
-
-	// SetSession sets the session for a chat
-	SetSession(chatID, sessionID string) error
-
-	// GetSession retrieves the session for a chat
-	GetSession(chatID string) (string, bool, error)
 
 	// AddToWhitelist adds a chat to the whitelist
 	AddToWhitelist(chatID, platform, addedBy string) error
@@ -317,44 +312,6 @@ func (s *ChatStoreJSON) ListChatsByOwner(ownerID, platform string) ([]*Chat, err
 	}
 
 	return chats, nil
-}
-
-// ============== Session Mapping ==============
-
-// SetSession sets the session for a chat (creates chat if not exists)
-func (s *ChatStoreJSON) SetSession(chatID, sessionID string) error {
-	if s == nil || s.store == nil {
-		return fmt.Errorf("chat store is not initialized")
-	}
-
-	chat := s.store.Get(chatID)
-	if chat == nil {
-		// Create new chat
-		now := time.Now().UTC()
-		chat = &Chat{
-			ChatID:    chatID,
-			Platform:  "telegram", // default platform
-			SessionID: sessionID,
-			CreatedAt: now,
-			UpdatedAt: now,
-		}
-		return s.UpsertChat(chat)
-	}
-	chat.SessionID = sessionID
-	chat.UpdatedAt = time.Now().UTC()
-	return s.store.Set(chatID, chat)
-}
-
-// GetSession retrieves the session for a chat
-func (s *ChatStoreJSON) GetSession(chatID string) (string, bool, error) {
-	if s == nil || s.store == nil {
-		return "", false, nil
-	}
-	chat := s.store.Get(chatID)
-	if chat == nil || chat.SessionID == "" {
-		return "", false, nil
-	}
-	return chat.SessionID, true, nil
 }
 
 // ============== Whitelist ==============

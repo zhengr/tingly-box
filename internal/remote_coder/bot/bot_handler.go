@@ -286,16 +286,12 @@ func (h *BotHandler) handleHandoff(hCtx HandlerContext, toAgent agentboot.AgentT
 		projectPath, _, _ = h.chatStore.GetProjectPath(hCtx.ChatID)
 	}
 
-	// Get session ID
-	sessionID, _, _ := h.chatStore.GetSession(hCtx.ChatID)
-
-	// Create handoff state
+	// Create handoff state (no sessionID needed - sessions are managed per-agent)
 	handoffState := &smartguide2.HandoffState{
 		FromAgent:   string(fromAgent),
 		ToAgent:     string(toAgent),
 		Timestamp:   time.Now(),
 		ProjectPath: projectPath,
-		SessionID:   sessionID,
 		ChatID:      hCtx.ChatID,
 	}
 
@@ -310,16 +306,15 @@ func (h *BotHandler) handleHandoff(hCtx HandlerContext, toAgent agentboot.AgentT
 		logrus.WithError(err).Error("Failed to update current agent after handoff")
 	}
 
-	// Also update session context to persist the agent choice
-	if sessionID != "" {
-		h.sessionMgr.SetContext(sessionID, "current_agent", string(toAgent))
-		logrus.WithFields(logrus.Fields{
-			"chatID":    hCtx.ChatID,
-			"sessionID": sessionID,
-			"fromAgent": fromAgent,
-			"toAgent":   toAgent,
-		}).Info("Updated session agent after handoff")
-	}
+	// Note: Session context update removed - sessions are now managed per-(chat, agent, project)
+	// The target agent will find/create its own session when it processes the next message
+
+	logrus.WithFields(logrus.Fields{
+		"chatID":    hCtx.ChatID,
+		"fromAgent": fromAgent,
+		"toAgent":   toAgent,
+		"project":   projectPath,
+	}).Info("Agent handoff completed")
 
 	// Send handoff confirmation
 	h.SendText(hCtx, result.Message)
@@ -425,8 +420,8 @@ func (h *BotHandler) handleSmartGuideMessage(hCtx HandlerContext, text string) e
 		logrus.WithField("defaultPath", projectPath).Info("Using default project path")
 	}
 
-	// Get session ID for meta
-	sessionID, _, _ := h.chatStore.GetSession(hCtx.ChatID)
+	// Smart Guide is stateless - no session ID
+	// We use empty string for sessionID in meta
 
 	// Create agent factory with TB Client and SmartGuide config
 	factory := smartguide2.NewAgentFactory(
@@ -440,7 +435,7 @@ func (h *BotHandler) handleSmartGuideMessage(hCtx HandlerContext, text string) e
 	agent, err := factory.CreateAgent(
 		// getStatusFunc callback
 		func(chatID string) (*smartguide2.StatusInfo, error) {
-			sessionID, _, _ := h.chatStore.GetSession(chatID)
+			// Smart Guide is stateless - no session
 			projectPath, _, _ := h.chatStore.GetProjectPath(chatID)
 			workingDir, hasWD, _ := h.chatStore.GetBashCwd(chatID)
 			if !hasWD {
@@ -449,7 +444,7 @@ func (h *BotHandler) handleSmartGuideMessage(hCtx HandlerContext, text string) e
 
 			return &smartguide2.StatusInfo{
 				CurrentAgent:   "tingly-box",
-				SessionID:      sessionID,
+				SessionID:      "", // Smart Guide is stateless
 				ProjectPath:    projectPath,
 				WorkingDir:     workingDir,
 				HasRunningTask: false,
@@ -484,11 +479,11 @@ func (h *BotHandler) handleSmartGuideMessage(hCtx HandlerContext, text string) e
 	agent.GetExecutor().SetWorkingDirectory(projectPath)
 	logrus.WithField("workingDir", projectPath).Debug("Set executor working directory")
 
-	// Create tool context
+	// Create tool context (Smart Guide is stateless - no session)
 	toolCtx := &smartguide2.ToolContext{
 		ChatID:      hCtx.ChatID,
 		ProjectPath: projectPath,
-		SessionID:   sessionID,
+		SessionID:   "", // Smart Guide is stateless
 	}
 
 	// Build meta for response header
@@ -497,7 +492,7 @@ func (h *BotHandler) handleSmartGuideMessage(hCtx HandlerContext, text string) e
 		ProjectPath: projectPath,
 		ChatID:      hCtx.ChatID,
 		UserID:      hCtx.SenderID,
-		SessionID:   sessionID,
+		SessionID:   "", // Smart Guide is stateless
 		AgentType:   AgentNameTinglyBox,
 	}
 
@@ -715,14 +710,10 @@ func (h *BotHandler) handleMediaMessage(hCtx HandlerContext) {
 // getProjectPath returns the project path for the current chat
 func (h *BotHandler) getProjectPath(hCtx HandlerContext) (string, bool) {
 	if hCtx.IsDirect {
-		sessionID, ok, _ := h.chatStore.GetSession(hCtx.ChatID)
-		if ok {
-			// Get project path from session context
-			if session, exists := h.sessionMgr.Get(sessionID); exists && session.Context != nil {
-				if projectPath, ok := session.Context["project_path"].(string); ok {
-					return projectPath, true
-				}
-			}
+		// Direct chat: get project path from Chat store
+		projectPath, hasBound, _ := h.chatStore.GetProjectPath(hCtx.ChatID)
+		if hasBound && projectPath != "" {
+			return projectPath, true
 		}
 	} else {
 		// Group chat: get bound project path
@@ -960,37 +951,35 @@ func (h *BotHandler) handleClaudeCodeMessage(hCtx HandlerContext, text string, p
 		}).Info("Using default cwd for Claude Code")
 	}
 
-	sessionID, ok, err := h.chatStore.GetSession(hCtx.ChatID)
-	if err != nil {
-		logrus.WithError(err).Warn("Failed to load session mapping")
-	}
+	// NEW: Find session by (chatID, agent, project) tuple
+	// This ensures we resume the correct session for the current project
+	agentType := "claude" // Claude Code agent type
+	sess := h.sessionMgr.FindBy(hCtx.ChatID, agentType, projectPath)
 
-	var sess *session.Session
-	if ok && sessionID != "" {
-		if s, exists := h.sessionMgr.GetOrLoad(sessionID); exists {
-			sess = s
-		}
-	}
-
-	// Auto-create session if none exists (now always creates with project path or default cwd)
+	// Auto-create session if none exists (now creates with binding info)
 	if sess == nil || sess.Status == session.StatusExpired || sess.Status == session.StatusClosed {
-		sess = h.sessionMgr.Create()
-		sessionID = sess.ID
-		h.sessionMgr.SetContext(sessionID, "project_path", projectPath)
+		sess = h.sessionMgr.CreateWith(hCtx.ChatID, agentType, projectPath)
 		// Clear expiration for persistent sessions
-		h.sessionMgr.Update(sessionID, func(s *session.Session) {
+		h.sessionMgr.Update(sess.ID, func(s *session.Session) {
 			s.ExpiresAt = time.Time{} // Zero value means no expiration
 		})
-		if err := h.chatStore.SetSession(hCtx.ChatID, sessionID); err != nil {
-			logrus.WithError(err).Warn("Failed to save session mapping")
-		}
-		ok = true
+
 		logrus.WithFields(logrus.Fields{
-			"chatID":     hCtx.ChatID,
-			"sessionID":  sessionID,
-			"projectDir": projectPath,
-		}).Info("Auto-created session for Claude Code")
+			"chatID":    hCtx.ChatID,
+			"sessionID": sess.ID,
+			"project":   projectPath,
+			"agent":     agentType,
+		}).Info("Created new session for Claude Code")
+	} else {
+		logrus.WithFields(logrus.Fields{
+			"chatID":    hCtx.ChatID,
+			"sessionID": sess.ID,
+			"project":   projectPath,
+			"agent":     agentType,
+		}).Info("Resumed existing session for Claude Code")
 	}
+
+	sessionID := sess.ID
 
 	// Refresh session activity
 	if sess != nil {
@@ -1178,40 +1167,27 @@ func (h *BotHandler) handleMockAgentMessage(hCtx HandlerContext, text string, pr
 
 	}
 
-	// Get or create a session for mock agent (simpler than claude code)
-	sessionID, ok, err := h.chatStore.GetSession(hCtx.ChatID)
-	if err != nil {
-		logrus.WithError(err).Warn("Failed to load session mapping")
-	}
-
-	var sess *session.Session
-	if ok && sessionID != "" {
-		if s, exists := h.sessionMgr.GetOrLoad(sessionID); exists {
-			sess = s
+	// Get project path
+	projectPath := projectPathOverride
+	if projectPath == "" {
+		boundPath, hasBound, _ := h.chatStore.GetProjectPath(hCtx.ChatID)
+		if hasBound && boundPath != "" {
+			projectPath = boundPath
 		}
 	}
+	if projectPath == "" {
+		projectPath = h.getDefaultProjectPath()
+	}
+
+	// Find or create session for mock agent
+	agentType := "mock"
+	sess := h.sessionMgr.FindBy(hCtx.ChatID, agentType, projectPath)
 
 	// Create new session if needed
 	if sess == nil || sess.Status == session.StatusExpired || sess.Status == session.StatusClosed {
-		sess = h.sessionMgr.Create()
-		sessionID = sess.ID
-		if projectPathOverride != "" {
-			h.sessionMgr.SetContext(sessionID, "project_path", projectPathOverride)
-		}
-		if err := h.chatStore.SetSession(hCtx.ChatID, sessionID); err != nil {
-			logrus.WithError(err).Warn("Failed to save session mapping")
-		}
+		sess = h.sessionMgr.CreateWith(hCtx.ChatID, agentType, projectPath)
 	}
-
-	// Get project path (optional for mock)
-	projectPath := projectPathOverride
-	if projectPath == "" && sess != nil && sess.Context != nil {
-		if v, ok := sess.Context["project_path"]; ok {
-			if pv, ok := v.(string); ok {
-				projectPath = strings.TrimSpace(pv)
-			}
-		}
-	}
+	sessionID := sess.ID
 
 	// Build meta
 	meta := ResponseMeta{
@@ -1413,24 +1389,52 @@ func (h *BotHandler) handleBotBindCommand(hCtx HandlerContext, fields []string) 
 
 // handleBotStatusCommand handles /bot status
 func (h *BotHandler) handleBotStatusCommand(hCtx HandlerContext) {
-	sessionID, ok, err := h.chatStore.GetSession(hCtx.ChatID)
-	if err != nil {
-		logrus.WithError(err).Warn("Failed to load session mapping")
-	}
-	if !ok || sessionID == "" {
-		h.SendText(hCtx, "No session mapped. Use "+cmdBindPrimary+" <project_path> to create one.")
-		return
+	// Get current agent
+	currentAgent, _ := h.getCurrentAgent(hCtx.ChatID)
+	agentType := string(currentAgent)
 
+	// Smart Guide is stateless
+	if agentType == "tingly-box" {
+		// Get project path for status
+		projectPath, _, _ := h.chatStore.GetProjectPath(hCtx.ChatID)
+		if projectPath == "" {
+			if path, found := getProjectPathForGroup(h.chatStore, hCtx.ChatID, string(hCtx.Platform)); found {
+				projectPath = path
+			}
+		}
+
+		var statusParts []string
+		statusParts = append(statusParts, "Agent: Smart Guide (@tb)")
+		statusParts = append(statusParts, "Status: Stateless (no session)")
+		if projectPath != "" {
+			statusParts = append(statusParts, fmt.Sprintf("Project: %s", projectPath))
+		}
+		h.SendText(hCtx, strings.Join(statusParts, "\n"))
+		return
 	}
-	sess, exists := h.sessionMgr.GetOrLoad(sessionID)
-	if !exists {
-		h.SendText(hCtx, "Session not found.")
+
+	// For other agents (claude, mock), find the session
+	projectPath, _, _ := h.chatStore.GetProjectPath(hCtx.ChatID)
+	if projectPath == "" {
+		if path, found := getProjectPathForGroup(h.chatStore, hCtx.ChatID, string(hCtx.Platform)); found {
+			projectPath = path
+		}
+	}
+	if projectPath == "" {
+		h.SendText(hCtx, "No project bound. Use "+cmdBindPrimary+" <project_path> first.")
+		return
+	}
+
+	sess := h.sessionMgr.FindBy(hCtx.ChatID, agentType, projectPath)
+	if sess == nil {
+		h.SendText(hCtx, fmt.Sprintf("No session found for agent %s in project %s", agentType, projectPath))
 		return
 	}
 
 	// Build status message
 	var statusParts []string
-	statusParts = append(statusParts, fmt.Sprintf("Session: %s", sessionID))
+	statusParts = append(statusParts, fmt.Sprintf("Agent: %s", agentType))
+	statusParts = append(statusParts, fmt.Sprintf("Session: %s", sess.ID))
 	statusParts = append(statusParts, fmt.Sprintf("Status: %s", sess.Status))
 
 	// Show running duration if running
@@ -1449,12 +1453,8 @@ func (h *BotHandler) handleBotStatusCommand(hCtx HandlerContext) {
 	}
 
 	// Show project path
-	if sess.Context != nil {
-		if v, ok := sess.Context["project_path"]; ok {
-			if pv, ok := v.(string); ok {
-				statusParts = append(statusParts, fmt.Sprintf("Project: %s", pv))
-			}
-		}
+	if sess.Project != "" {
+		statusParts = append(statusParts, fmt.Sprintf("Project: %s", sess.Project))
 	}
 
 	// Show error if failed
@@ -1471,24 +1471,10 @@ func (h *BotHandler) handleBotStatusCommand(hCtx HandlerContext) {
 
 // handleClearCommand clears the current session context and creates a new one
 func (h *BotHandler) handleClearCommand(hCtx HandlerContext) {
-	sessionID, ok, err := h.chatStore.GetSession(hCtx.ChatID)
-	if err != nil {
-		logrus.WithError(err).Warn("Failed to load session mapping")
-	}
-
-	var projectPath string
-	if ok && sessionID != "" {
-		if sess, exists := h.sessionMgr.GetOrLoad(sessionID); exists && sess.Context != nil {
-			if v, ok := sess.Context["project_path"]; ok {
-				if pv, ok := v.(string); ok {
-					projectPath = pv
-				}
-			}
-		}
-	}
-
-	// For group chats, also check group binding if no project path from session
+	// Get current project path
+	projectPath, _, _ := h.chatStore.GetProjectPath(hCtx.ChatID)
 	if projectPath == "" {
+		// For group chats, also check group binding
 		if path, found := getProjectPathForGroup(h.chatStore, hCtx.ChatID, string(hCtx.Platform)); found {
 			projectPath = path
 		}
@@ -1500,15 +1486,33 @@ func (h *BotHandler) handleClearCommand(hCtx HandlerContext) {
 
 	}
 
-	// Create new session with same project path
-	sess := h.sessionMgr.Create()
-	h.sessionMgr.SetContext(sess.ID, "project_path", projectPath)
-
-	if err := h.chatStore.SetSession(hCtx.ChatID, sess.ID); err != nil {
-		logrus.WithError(err).Warn("Failed to update session mapping")
-		h.SendText(hCtx, "Failed to clear context.")
+	// Get current agent and close the matching session
+	currentAgent, _ := h.getCurrentAgent(hCtx.ChatID)
+	agentType := string(currentAgent)
+	if agentType == "tingly-box" {
+		// Smart Guide has no sessions, nothing to clear
+		h.SendText(hCtx, "Smart Guide (@tb) is stateless. Use `/clear` with Claude Code (@cc) to clear sessions.")
 		return
 	}
+
+	// Find and close the current session for this (chat, agent, project)
+	oldSess := h.sessionMgr.FindBy(hCtx.ChatID, agentType, projectPath)
+	if oldSess != nil {
+		h.sessionMgr.Close(oldSess.ID)
+		logrus.WithFields(logrus.Fields{
+			"chatID":    hCtx.ChatID,
+			"sessionID": oldSess.ID,
+			"agent":     agentType,
+			"project":   projectPath,
+		}).Info("Closed session on /clear")
+	}
+
+	// Create new session with same project path
+	sess := h.sessionMgr.CreateWith(hCtx.ChatID, agentType, projectPath)
+	// Clear expiration for persistent sessions
+	h.sessionMgr.Update(sess.ID, func(s *session.Session) {
+		s.ExpiresAt = time.Time{} // Zero value means no expiration
+	})
 
 	h.SendText(hCtx, fmt.Sprintf("Context cleared. New session: %s\nProject: %s", sess.ID, projectPath))
 }
@@ -1599,18 +1603,23 @@ func (h *BotHandler) handleBindConfirm(hCtx HandlerContext) {
 
 	}
 
-	// Create a new session
-	sess := h.sessionMgr.Create()
-	sessionID := sess.ID
-	h.sessionMgr.SetContext(sessionID, "project_path", pending.ProposedPath)
+	// Close the old session for this (chat, agent) combination if exists
+	agentType := "claude"
+	oldSess := h.sessionMgr.FindBy(hCtx.ChatID, agentType, "")
+	if oldSess != nil {
+		h.sessionMgr.Close(oldSess.ID)
+		logrus.WithFields(logrus.Fields{
+			"chatID":    hCtx.ChatID,
+			"sessionID": oldSess.ID,
+		}).Info("Closed old session after project change")
+	}
+
+	// Create a new session with the new project binding
+	sess := h.sessionMgr.CreateWith(hCtx.ChatID, agentType, pending.ProposedPath)
 	// Clear expiration for direct chat sessions
-	h.sessionMgr.Update(sessionID, func(s *session.Session) {
+	h.sessionMgr.Update(sess.ID, func(s *session.Session) {
 		s.ExpiresAt = time.Time{} // Zero value means no expiration
 	})
-
-	if err := h.chatStore.SetSession(hCtx.ChatID, sessionID); err != nil {
-		logrus.WithError(err).Warn("Failed to save session mapping")
-	}
 
 	delete(h.pendingBinds, hCtx.ChatID)
 
@@ -1713,18 +1722,24 @@ func (h *BotHandler) handleProjectSwitch(hCtx HandlerContext, projectPath string
 		return
 	}
 
-	// Create new session with the selected project
-	sess := h.sessionMgr.Create()
-	h.sessionMgr.SetContext(sess.ID, "project_path", projectPath)
+	// Get current agent and close old session
+	currentAgent, _ := h.getCurrentAgent(hCtx.ChatID)
+	agentType := string(currentAgent)
 
-	if err := h.chatStore.SetSession(hCtx.ChatID, sess.ID); err != nil {
-		logrus.WithError(err).Warn("Failed to update session mapping")
-		h.SendText(hCtx, "Failed to switch project")
-		return
+	// Close old session for this (chat, agent) with different project
+	// Find any session for this (chat, agent) and close it
+	// Note: We need to close all sessions for this (chat, agent) since project changed
+	if agentType != "tingly-box" {
+		sessions := h.sessionMgr.ListByChat(hCtx.ChatID)
+		for _, sess := range sessions {
+			if sess.Agent == agentType && sess.Project != projectPath {
+				h.sessionMgr.Close(sess.ID)
+			}
+		}
 	}
 
-	logrus.Infof("Project switched: chat=%s path=%s session=%s", hCtx.ChatID, projectPath, sess.ID)
-	h.SendText(hCtx, fmt.Sprintf("✅ Switched to: %s\nSession: %s", projectPath, sess.ID))
+	logrus.Infof("Project switched: chat=%s path=%s agent=%s", hCtx.ChatID, projectPath, agentType)
+	h.SendText(hCtx, fmt.Sprintf("✅ Switched to: %s", projectPath))
 }
 
 // handleBindInteractive starts an interactive directory browser for binding
@@ -1776,20 +1791,13 @@ func (h *BotHandler) completeBind(hCtx HandlerContext, projectPath string) {
 		return
 	}
 
-	// Create session and bind to chat
-	sess := h.sessionMgr.Create()
-	h.sessionMgr.SetContext(sess.ID, "project_path", expandedPath)
+	// With new design, sessions are created on-demand when agent processes a message
+	// No need to create session here
 
-	if err := h.chatStore.SetSession(hCtx.ChatID, sess.ID); err != nil {
-		logrus.WithError(err).Warn("Failed to save session mapping")
-		h.SendText(hCtx, fmt.Sprintf("Project bound but failed to create session: %v", err))
-		return
-	}
-
-	logrus.Infof("Project bound: chat=%s path=%s session=%s", hCtx.ChatID, expandedPath, sess.ID)
+	logrus.Infof("Project bound: chat=%s path=%s", hCtx.ChatID, expandedPath)
 
 	if hCtx.IsDirect {
-		h.SendText(hCtx, fmt.Sprintf("✅ Project bound: %s\nSession: %s\n\nYou can now send messages directly.", expandedPath, sess.ID))
+		h.SendText(hCtx, fmt.Sprintf("✅ Project bound: %s\n\nYou can now send messages directly.", expandedPath))
 	} else {
 		h.SendText(hCtx, fmt.Sprintf("✅ Group bound to project: %s", expandedPath))
 	}
@@ -1858,24 +1866,8 @@ func (h *BotHandler) handleBashCommand(hCtx HandlerContext, fields []string) {
 		return
 	}
 
-	sessionID, ok, err := h.chatStore.GetSession(hCtx.ChatID)
-	if err != nil {
-		logrus.WithError(err).Warn("Failed to load session mapping")
-	}
-	var sess *session.Session
-	if ok && sessionID != "" {
-		if s, exists := h.sessionMgr.GetOrLoad(sessionID); exists {
-			sess = s
-		}
-	}
-	projectPath := ""
-	if sess != nil && sess.Context != nil {
-		if v, ok := sess.Context["project_path"]; ok {
-			if pv, ok := v.(string); ok {
-				projectPath = pv
-			}
-		}
-	}
+	// Get project path from Chat instead of session
+	projectPath, _, _ := h.chatStore.GetProjectPath(hCtx.ChatID)
 	bashCwd, _, err := h.chatStore.GetBashCwd(hCtx.ChatID)
 	if err != nil {
 		logrus.WithError(err).Warn("Failed to load bash cwd")

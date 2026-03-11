@@ -43,9 +43,17 @@ func Run(ctx context.Context, cfg *config.Config, imbotStore *db.ImBotSettingsSt
 
 	logrus.Info("Starting remote-coder (bot-only mode)")
 
-	store, err := session.NewMessageStore(cfg.DBPath)
+	// Get session store path
+	sessionStorePath := cfg.DBPath
+	if filepath.Ext(cfg.DBPath) == ".db" {
+		sessionStorePath = filepath.Join(filepath.Dir(cfg.DBPath), "bot_sessions.json")
+	} else {
+		sessionStorePath = filepath.Join(cfg.DBPath, "bot_sessions.json")
+	}
+
+	store, err := session.NewSessionStoreJSON(sessionStorePath)
 	if err != nil {
-		return fmt.Errorf("failed to initialize remote-coder message store: %w", err)
+		return fmt.Errorf("failed to initialize session store: %w", err)
 	}
 
 	sessionMgr := session.NewManager(session.Config{

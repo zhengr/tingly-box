@@ -984,10 +984,11 @@ func runStandaloneBot(ctx context.Context, appManager *AppManager, setting db.Se
 		SmartGuideModel:    setting.SmartGuideModel,
 	}
 
-	// Create session manager (minimal for standalone bot)
-	msgStore, err := session.NewMessageStore(filepath.Join(dataPath, "bot_messages.db"))
+	// Create session store (minimal for standalone bot)
+	sessionStorePath := filepath.Join(dataPath, "bot_sessions.json")
+	msgStore, err := session.NewSessionStoreJSON(sessionStorePath)
 	if err != nil {
-		return fmt.Errorf("failed to create message store: %w", err)
+		return fmt.Errorf("failed to create session store: %w", err)
 	}
 
 	sessionMgr := session.NewManager(session.Config{
