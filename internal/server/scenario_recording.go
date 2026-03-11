@@ -10,16 +10,18 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/gin-gonic/gin"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/responses"
 	"github.com/sirupsen/logrus"
+	"github.com/tingly-dev/tingly-box/internal/obs"
+	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/protocol/stream"
 	"github.com/tingly-dev/tingly-box/internal/typ"
-
-	"github.com/tingly-dev/tingly-box/internal/obs"
 )
 
 // RecordScenarioRequest records the scenario-level request (client -> tingly-box)
 // This captures the original request from the client before any transformation
-func (s *Server) RecordScenarioRequest(c *gin.Context, scenario string) *ScenarioRecorder {
+func (s *Server) RecordScenarioRequest(c *gin.Context, scenario string, apiStyle protocol.APIStyle) *ScenarioRecorder {
 	scenarioType := typ.RuleScenario(scenario)
 
 	// Get or create sink for this scenario (on-demand)
@@ -61,6 +63,7 @@ func (s *Server) RecordScenarioRequest(c *gin.Context, scenario string) *Scenari
 		startTime: time.Now(),
 		c:         c,
 		bodyBytes: bodyBytes,
+		apiStyle:  apiStyle, // Set API style for streaming processing
 	}
 }
 
@@ -72,6 +75,7 @@ type ScenarioRecorder struct {
 	startTime time.Time
 	c         *gin.Context
 	bodyBytes []byte
+	apiStyle  protocol.APIStyle // API style for determining how to process streaming events
 
 	// For streaming responses
 	streamChunks      []map[string]interface{} // Collected stream chunks
@@ -293,6 +297,43 @@ func (sr *streamRecorder) RecordV1BetaEvent(event *anthropic.BetaRawMessageStrea
 	}
 	sr.recorder.RecordStreamChunk(event.Type, event)
 	sr.assembler.RecordV1BetaEvent(event)
+}
+
+// RecordOpenAIChatChunk records an OpenAI ChatCompletionChunk event
+func (sr *streamRecorder) RecordOpenAIChatChunk(chunk *openai.ChatCompletionChunk) {
+	if sr == nil {
+		return
+	}
+	sr.recorder.RecordStreamChunk("chat.completion.chunk", chunk)
+
+	// Track usage from chunk
+	if chunk.Usage.PromptTokens > 0 {
+		sr.inputTokens = int(chunk.Usage.PromptTokens)
+		sr.hasUsage = true
+	}
+	if chunk.Usage.CompletionTokens > 0 {
+		sr.outputTokens = int(chunk.Usage.CompletionTokens)
+		sr.hasUsage = true
+	}
+}
+
+// RecordOpenAIResponsesEvent records an OpenAI Responses API stream event
+func (sr *streamRecorder) RecordOpenAIResponsesEvent(event *responses.ResponseStreamEventUnion) {
+	if sr == nil {
+		return
+	}
+	sr.recorder.RecordStreamChunk(event.Type, event)
+
+	// Extract usage from response events
+	// Usage is available in event.Response.Usage for most event types
+	if event.Response.Usage.InputTokens > 0 {
+		sr.inputTokens = int(event.Response.Usage.InputTokens)
+		sr.hasUsage = true
+	}
+	if event.Response.Usage.OutputTokens > 0 {
+		sr.outputTokens = int(event.Response.Usage.OutputTokens)
+		sr.hasUsage = true
+	}
 }
 
 // Finish finishes recording and sets the assembled response
@@ -559,4 +600,86 @@ func NewNonStreamRecorderHook(recorder *ScenarioRecorder, provider *typ.Provider
 	return func() {
 		recorder.RecordResponse(provider, model)
 	}
+}
+
+// NewOpenAIChatRecorderHooks creates hooks for OpenAI chat streaming
+func NewOpenAIChatRecorderHooks(recorder *ScenarioRecorder, model string, provider *typ.Provider) (
+	onStreamEvent func(event interface{}) error,
+	onStreamComplete func(),
+	onStreamError func(err error),
+) {
+	if recorder == nil {
+		return nil, nil, nil
+	}
+
+	streamRec := newStreamRecorder(recorder)
+
+	onStreamEvent = func(event interface{}) error {
+		if streamRec == nil {
+			return nil
+		}
+		switch evt := event.(type) {
+		case *openai.ChatCompletionChunk:
+			streamRec.RecordOpenAIChatChunk(evt)
+		}
+		return nil
+	}
+
+	onStreamComplete = func() {
+		if streamRec == nil {
+			return
+		}
+		streamRec.Finish(model, streamRec.inputTokens, streamRec.outputTokens)
+		streamRec.RecordResponse(provider, model)
+	}
+
+	onStreamError = func(err error) {
+		if streamRec == nil {
+			return
+		}
+		streamRec.RecordError(err)
+	}
+
+	return onStreamEvent, onStreamComplete, onStreamError
+}
+
+// NewOpenAIResponsesRecorderHooks creates hooks for OpenAI Responses streaming
+func NewOpenAIResponsesRecorderHooks(recorder *ScenarioRecorder, model string, provider *typ.Provider) (
+	onStreamEvent func(event interface{}) error,
+	onStreamComplete func(),
+	onStreamError func(err error),
+) {
+	if recorder == nil {
+		return nil, nil, nil
+	}
+
+	streamRec := newStreamRecorder(recorder)
+
+	onStreamEvent = func(event interface{}) error {
+		if streamRec == nil {
+			return nil
+		}
+		switch evt := event.(type) {
+		case *responses.ResponseStreamEventUnion:
+			streamRec.RecordOpenAIResponsesEvent(evt)
+		}
+		return nil
+	}
+
+	onStreamComplete = func() {
+		if streamRec == nil {
+			return
+		}
+		streamRec.Finish(model, streamRec.inputTokens, streamRec.outputTokens)
+		streamRec.RecordResponse(provider, model)
+	}
+
+	onStreamError = func(err error) {
+		if streamRec == nil {
+			return
+		}
+		streamRec.RecordError(err)
+	}
+
+	return onStreamEvent, onStreamComplete, onStreamError
 }

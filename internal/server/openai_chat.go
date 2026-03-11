@@ -229,9 +229,30 @@ func (s *Server) handleOpenAIChatStreamingRequest(c *gin.Context, provider *typ.
 		return
 	}
 
-	// Create handle context and handle stream
+	// Create handle context with recorder hooks
 	hc := protocol.NewHandleContext(c, responseModel)
 	hc.DisableStreamUsage = disableStreamUsage
+
+	// Get scenario recorder and register hooks
+	var recorder *ScenarioRecorder
+	if r, exists := c.Get("scenario_recorder"); exists {
+		recorder = r.(*ScenarioRecorder)
+	}
+	if recorder != nil {
+		// Get actual model from request
+		actualModel := string(req.Model)
+		onEvent, onComplete, onError := NewOpenAIChatRecorderHooks(recorder, actualModel, provider)
+		if onEvent != nil {
+			hc.WithOnStreamEvent(onEvent)
+		}
+		if onComplete != nil {
+			hc.WithOnStreamComplete(onComplete)
+		}
+		if onError != nil {
+			hc.WithOnStreamError(onError)
+		}
+	}
+
 	usage, err := stream.HandleOpenAIChatStream(hc, streamResp, req)
 
 	// Track usage from stream handler

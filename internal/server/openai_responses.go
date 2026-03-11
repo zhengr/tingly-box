@@ -72,7 +72,7 @@ func (s *Server) ResponsesCreate(c *gin.Context) {
 	// Start scenario-level recording (client -> tingly-box traffic) only if enabled
 	var recorder *ScenarioRecorder
 	if s.ApplyRecording(scenarioType) {
-		recorder = s.RecordScenarioRequest(c, scenario)
+		recorder = s.RecordScenarioRequest(c, scenario, protocol.APIStyleOpenAIResponses)
 		if recorder != nil {
 			// Store recorder in context for use in handlers
 			c.Set("scenario_recorder", recorder)
@@ -473,8 +473,27 @@ func (s *Server) handleResponsesStreamingRequest(c *gin.Context, provider *typ.P
 	}
 	defer cancel()
 
-	// Handle the streaming response
+	// Create handle context with recorder hooks
 	hc := protocol.NewHandleContext(c, responseModel)
+
+	// Get scenario recorder and register hooks
+	var recorder *ScenarioRecorder
+	if r, exists := c.Get("scenario_recorder"); exists {
+		recorder = r.(*ScenarioRecorder)
+	}
+	if recorder != nil {
+		onEvent, onComplete, onError := NewOpenAIResponsesRecorderHooks(recorder, actualModel, provider)
+		if onEvent != nil {
+			hc.WithOnStreamEvent(onEvent)
+		}
+		if onComplete != nil {
+			hc.WithOnStreamComplete(onComplete)
+		}
+		if onError != nil {
+			hc.WithOnStreamError(onError)
+		}
+	}
+
 	usage, err := HandleOpenAIResponsesStream(hc, stream, responseModel)
 
 	// Track usage from stream handler

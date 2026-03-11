@@ -171,7 +171,7 @@ func (s *Server) OpenAIChatCompletions(c *gin.Context) {
 	// Start scenario-level recording (client -> tingly-box traffic) only if enabled
 	var recorder *ScenarioRecorder
 	if s.ApplyRecording(scenarioType) {
-		recorder = s.RecordScenarioRequest(c, scenario)
+		recorder = s.RecordScenarioRequest(c, scenario, protocol.APIStyleOpenAI)
 		if recorder != nil {
 			// Store recorder in context for use in handlers
 			c.Set("scenario_recorder", recorder)
