@@ -195,6 +195,7 @@ func (s *ImBotSettingsStore) CreateSettings(settings Settings) (Settings, error)
 }
 
 // UpdateSettings updates an existing ImBot configuration.
+// Only updates fields that are non-zero/empty in the settings struct.
 func (s *ImBotSettingsStore) UpdateSettings(uuid string, settings Settings) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -202,39 +203,64 @@ func (s *ImBotSettingsStore) UpdateSettings(uuid string, settings Settings) erro
 	now := time.Now()
 	settings.UpdatedAt = now
 
-	// Convert auth map to JSON
-	authConfigJSON := ""
+	// Build a map of only the fields to update
+	// This allows partial updates - empty/zero values won't overwrite existing data
+	updates := make(map[string]interface{})
+
+	if settings.Name != "" {
+		updates["name"] = settings.Name
+	}
+	if settings.Platform != "" {
+		updates["platform"] = settings.Platform
+	}
+	if settings.AuthType != "" {
+		updates["auth_type"] = settings.AuthType
+	}
+	if settings.ProxyURL != "" {
+		updates["proxy_url"] = settings.ProxyURL
+	}
+	if settings.ChatIDLock != "" {
+		updates["chat_id_lock"] = settings.ChatIDLock
+	}
+
+	// Handle Auth config - only update if non-empty
 	if len(settings.Auth) > 0 {
 		if b, err := json.Marshal(settings.Auth); err == nil {
-			authConfigJSON = string(b)
+			updates["auth_config"] = string(b)
 		}
 	}
 
-	// Convert bash allowlist to JSON
-	allowlistJSON := ""
+	// Handle BashAllowlist - only update if non-empty
 	if len(settings.BashAllowlist) > 0 {
 		if b, err := json.Marshal(settings.BashAllowlist); err == nil {
-			allowlistJSON = string(b)
+			updates["bash_allowlist"] = string(b)
 		}
+	}
+
+	if settings.DefaultCwd != "" {
+		updates["default_cwd"] = settings.DefaultCwd
+	}
+	if settings.DefaultAgent != "" {
+		updates["default_agent"] = settings.DefaultAgent
+	}
+	if settings.SmartGuideProvider != "" {
+		updates["smartguide_provider"] = settings.SmartGuideProvider
+	}
+	if settings.SmartGuideModel != "" {
+		updates["smartguide_model"] = settings.SmartGuideModel
+	}
+
+	// Always update enabled and updated_at if explicitly set
+	updates["enabled"] = settings.Enabled
+	updates["updated_at"] = settings.UpdatedAt
+
+	if len(updates) == 0 {
+		return nil // Nothing to update
 	}
 
 	result := s.db.Model(&ImBotSettingsRecord{}).
 		Where("bot_uuid = ?", uuid).
-		Updates(map[string]interface{}{
-			"name":                settings.Name,
-			"platform":            settings.Platform,
-			"auth_type":           settings.AuthType,
-			"auth_config":         authConfigJSON,
-			"proxy_url":           settings.ProxyURL,
-			"chat_id_lock":        settings.ChatIDLock,
-			"bash_allowlist":      allowlistJSON,
-			"default_cwd":         settings.DefaultCwd,
-			"default_agent":       settings.DefaultAgent,
-			"enabled":             settings.Enabled,
-			"smartguide_provider": settings.SmartGuideProvider,
-			"smartguide_model":    settings.SmartGuideModel,
-			"updated_at":          settings.UpdatedAt,
-		})
+		Updates(updates)
 
 	if result.Error != nil {
 		return fmt.Errorf("failed to update settings: %w", result.Error)
