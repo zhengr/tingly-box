@@ -28,7 +28,8 @@ type Settings struct {
 	ProxyURL      string            `json:"proxy_url,omitempty"`
 	ChatIDLock    string            `json:"chat_id,omitempty"`
 	BashAllowlist []string          `json:"bash_allowlist,omitempty"`
-	DefaultCwd    string            `json:"default_cwd,omitempty"` // Default working directory
+	DefaultCwd    string            `json:"default_cwd,omitempty"`   // Default working directory
+	DefaultAgent  string            `json:"default_agent,omitempty"` // Default Agent UUID
 	Enabled       bool              `json:"enabled"`
 	// SmartGuide model configuration (required for @tb agent)
 	SmartGuideProvider string    `json:"smartguide_provider,omitempty"` // Provider UUID
@@ -178,6 +179,7 @@ func (s *ImBotSettingsStore) CreateSettings(settings Settings) (Settings, error)
 		ChatIDLock:         settings.ChatIDLock,
 		BashAllowlist:      allowlistJSON,
 		DefaultCwd:         settings.DefaultCwd,
+		DefaultAgent:       settings.DefaultAgent,
 		Enabled:            settings.Enabled,
 		SmartGuideProvider: settings.SmartGuideProvider,
 		SmartGuideModel:    settings.SmartGuideModel,
@@ -227,6 +229,7 @@ func (s *ImBotSettingsStore) UpdateSettings(uuid string, settings Settings) erro
 			"chat_id_lock":        settings.ChatIDLock,
 			"bash_allowlist":      allowlistJSON,
 			"default_cwd":         settings.DefaultCwd,
+			"default_agent":       settings.DefaultAgent,
 			"enabled":             settings.Enabled,
 			"smartguide_provider": settings.SmartGuideProvider,
 			"smartguide_model":    settings.SmartGuideModel,
@@ -293,6 +296,7 @@ func recordToSettings(record ImBotSettingsRecord) (Settings, error) {
 		ProxyURL:           record.ProxyURL,
 		ChatIDLock:         record.ChatIDLock,
 		DefaultCwd:         record.DefaultCwd,
+		DefaultAgent:       record.DefaultAgent,
 		Enabled:            record.Enabled,
 		SmartGuideProvider: record.SmartGuideProvider,
 		SmartGuideModel:    record.SmartGuideModel,

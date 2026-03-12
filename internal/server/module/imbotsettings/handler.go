@@ -127,6 +127,8 @@ func (h *Handler) CreateSettings(c *gin.Context) {
 		ProxyURL:           strings.TrimSpace(req.ProxyURL),
 		ChatIDLock:         strings.TrimSpace(req.ChatID),
 		BashAllowlist:      normalizeAllowlist(req.BashAllowlist),
+		DefaultCwd:         strings.TrimSpace(req.DefaultCwd),
+		DefaultAgent:       strings.TrimSpace(req.DefaultAgent),
 		Enabled:            req.Enabled,
 		SmartGuideProvider: strings.TrimSpace(req.SmartGuideProvider),
 		SmartGuideModel:    strings.TrimSpace(req.SmartGuideModel),
@@ -221,6 +223,8 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		ProxyURL:      strings.TrimSpace(req.ProxyURL),
 		ChatIDLock:    strings.TrimSpace(req.ChatID),
 		BashAllowlist: normalizeAllowlist(req.BashAllowlist),
+		DefaultCwd:    currentSettings.DefaultCwd,   // Initialize with current value
+		DefaultAgent:  currentSettings.DefaultAgent, // Initialize with current value
 	}
 
 	newEnabled := currentSettings.Enabled
@@ -239,6 +243,20 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		settings.SmartGuideModel = strings.TrimSpace(*req.SmartGuideModel)
 	} else {
 		settings.SmartGuideModel = currentSettings.SmartGuideModel
+	}
+
+	// Handle default_cwd config (partial update)
+	if req.DefaultCwd != nil {
+		settings.DefaultCwd = strings.TrimSpace(*req.DefaultCwd)
+	} else {
+		settings.DefaultCwd = currentSettings.DefaultCwd
+	}
+
+	// Handle default_agent config (partial update)
+	if req.DefaultAgent != nil {
+		settings.DefaultAgent = strings.TrimSpace(*req.DefaultAgent)
+	} else {
+		settings.DefaultAgent = currentSettings.DefaultAgent
 	}
 
 	if err := h.store.UpdateSettings(uuid, settings); err != nil {
