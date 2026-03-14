@@ -306,7 +306,7 @@ func (s *Server) anthropicMessagesV1(c *gin.Context, req protocol.AnthropicMessa
 		if useResponsesAPI {
 			// Use Responses API path with direct v1 conversion (no beta intermediate)
 			// Convert Anthropic v1 request to Responses API format directly
-			responsesReq := request.ConvertAnthropicV1ToResponsesRequestWithProvider(&req.MessageNewParams, provider, actualModel)
+			responsesReq := request.ConvertAnthropicV1ToResponsesRequest(&req.MessageNewParams)
 
 			// Set the rule and provider in context so middleware can use the same rule
 			if rule != nil {

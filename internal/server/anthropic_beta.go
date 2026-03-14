@@ -8,6 +8,7 @@ import (
 	anthropicstream "github.com/anthropics/anthropic-sdk-go/packages/ssestream"
 	"github.com/gin-gonic/gin"
 	"github.com/openai/openai-go/v3/responses"
+	"github.com/tingly-dev/tingly-box/internal/protocol/transformer"
 
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/protocol/nonstream"
@@ -268,10 +269,6 @@ func (s *Server) anthropicMessagesV1Beta(c *gin.Context, req protocol.AnthropicB
 				s.handleAnthropicV1BetaViaResponsesAPINonStreaming(c, req, proxyModel, actualModel, provider, responsesReq)
 			}
 		} else {
-			// Use Chat Completions path (fallback)
-			// Note: isStreaming is determined after conversion, so we need to re-evaluate
-			openaiReq := request.ConvertAnthropicBetaToOpenAIRequestWithProvider(&req.BetaMessageNewParams, true, provider, actualModel, isStreaming, disableStreamUsage)
-
 			// Set the rule and provider in context so middleware can use the same rule
 			if rule != nil {
 				c.Set("rule", rule)
@@ -281,10 +278,14 @@ func (s *Server) anthropicMessagesV1Beta(c *gin.Context, req protocol.AnthropicB
 			c.Set("provider", provider.UUID)
 			c.Set("model", actualModel)
 
+			openaiReq, config := request.ConvertAnthropicBetaToOpenAIRequest(&req.BetaMessageNewParams, true, isStreaming, disableStreamUsage)
+			// Apply provider-specific transforms
+			openaiReq = transformer.ApplyProviderTransforms(openaiReq, provider, actualModel, config)
+			// Clean up temporary fields (e.g., x_thinking)
+			request.CleanupTempFields(openaiReq)
+
 			// Use OpenAI Chat Completions path
 			if isStreaming {
-				// Re-convert with streaming enabled since we're now in streaming mode
-				openaiReq = request.ConvertAnthropicBetaToOpenAIRequestWithProvider(&req.BetaMessageNewParams, true, provider, actualModel, isStreaming, disableStreamUsage)
 				// Set up stream recorder
 				streamRec := newStreamRecorder(recorder)
 				if streamRec != nil {
@@ -292,7 +293,7 @@ func (s *Server) anthropicMessagesV1Beta(c *gin.Context, req protocol.AnthropicB
 				}
 
 				// Create streaming request with request context for proper cancellation
-				wrapper := s.clientPool.GetOpenAIClient(provider, string(openaiReq.Model))
+				wrapper := s.clientPool.GetOpenAIClient(provider, openaiReq.Model)
 				fc := NewForwardContext(c.Request.Context(), provider)
 				streamResp, cancel, err := ForwardOpenAIChatStream(fc, wrapper, openaiReq)
 				if cancel != nil {
@@ -327,7 +328,7 @@ func (s *Server) anthropicMessagesV1Beta(c *gin.Context, req protocol.AnthropicB
 				}
 
 			} else {
-				wrapper := s.clientPool.GetOpenAIClient(provider, string(openaiReq.Model))
+				wrapper := s.clientPool.GetOpenAIClient(provider, openaiReq.Model)
 				fc := NewForwardContext(nil, provider)
 				resp, _, err := ForwardOpenAIChat(fc, wrapper, openaiReq)
 				if err != nil {
