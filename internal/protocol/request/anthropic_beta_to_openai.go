@@ -11,6 +11,62 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/protocol/transformer"
 )
 
+// ConvertAnthropicBetaToOpenAIRequest converts Anthropic beta request to OpenAI format
+// Returns the OpenAI request and a config object with metadata for provider transforms
+func ConvertAnthropicBetaToOpenAIRequest(anthropicReq *anthropic.BetaMessageNewParams, compatible bool, isStreaming bool, disableStreamUsage bool) (*openai.ChatCompletionNewParams, *transformer.OpenAIConfig) {
+	openaiReq := &openai.ChatCompletionNewParams{
+		Model: openai.ChatModel(anthropicReq.Model),
+	}
+
+	isThinking := IsThinkingEnabledBeta(anthropicReq)
+
+	// Set MaxTokens
+	openaiReq.MaxTokens = openai.Opt(anthropicReq.MaxTokens)
+
+	// Convert messages
+	for _, msg := range anthropicReq.Messages {
+		if string(msg.Role) == "user" {
+			// User messages may contain tool_result blocks - need special handling
+			messages := convertAnthropicBetaUserMessageToOpenAI(msg)
+			openaiReq.Messages = append(openaiReq.Messages, messages...)
+		} else if string(msg.Role) == "assistant" {
+			// Convert assistant message with potential tool_use blocks
+			openaiMsg := convertAnthropicBetaAssistantMessageToOpenAI(msg)
+			openaiReq.Messages = append(openaiReq.Messages, openaiMsg)
+		}
+	}
+
+	// Convert system message
+	if len(anthropicReq.System) > 0 {
+		systemStr := ConvertBetaTextBlocksToString(anthropicReq.System)
+		systemMsg := openai.SystemMessage(systemStr)
+		// Add system message at the beginning
+		openaiReq.Messages = append([]openai.ChatCompletionMessageParamUnion{systemMsg}, openaiReq.Messages...)
+	}
+
+	// Convert tools from Anthropic format to OpenAI format
+	if len(anthropicReq.Tools) > 0 {
+		if compatible {
+			openaiReq.Tools = ConvertAnthropicBetaToolsToOpenAIWithTransformedSchema(anthropicReq.Tools)
+		} else {
+			openaiReq.Tools = ConvertAnthropicBetaToolsToOpenAI(anthropicReq.Tools)
+		}
+		// Convert tool choice
+		openaiReq.ToolChoice = ConvertAnthropicBetaToolChoiceToOpenAI(&anthropicReq.ToolChoice)
+	}
+
+	config := &transformer.OpenAIConfig{
+		HasThinking:     isThinking,
+		ReasoningEffort: "low", // Default to "low" for OpenAI-compatible APIs
+	}
+
+	// Only set stream_options for streaming requests (per OpenAI API spec)
+	if isStreaming && !disableStreamUsage {
+		openaiReq.StreamOptions.IncludeUsage = param.Opt[bool]{Value: true}
+	}
+	return openaiReq, config
+}
+
 // ConvertAnthropicBetaToolsToOpenAI converts Anthropic beta tools to OpenAI format
 func ConvertAnthropicBetaToolsToOpenAI(tools []anthropic.BetaToolUnionParam) []openai.ChatCompletionToolUnionParam {
 	if len(tools) == 0 {
@@ -87,62 +143,6 @@ func ConvertAnthropicBetaToolChoiceToOpenAI(tc *anthropic.BetaToolChoiceUnionPar
 	return openai.ChatCompletionToolChoiceOptionUnionParam{
 		OfAuto: openai.Opt("auto"),
 	}
-}
-
-// ConvertAnthropicBetaToOpenAIRequest converts Anthropic beta request to OpenAI format
-// Returns the OpenAI request and a config object with metadata for provider transforms
-func ConvertAnthropicBetaToOpenAIRequest(anthropicReq *anthropic.BetaMessageNewParams, compatible bool, isStreaming bool, disableStreamUsage bool) (*openai.ChatCompletionNewParams, *transformer.OpenAIConfig) {
-	openaiReq := &openai.ChatCompletionNewParams{
-		Model: openai.ChatModel(anthropicReq.Model),
-	}
-
-	isThinking := IsThinkingEnabledBeta(anthropicReq)
-
-	// Set MaxTokens
-	openaiReq.MaxTokens = openai.Opt(anthropicReq.MaxTokens)
-
-	// Convert messages
-	for _, msg := range anthropicReq.Messages {
-		if string(msg.Role) == "user" {
-			// User messages may contain tool_result blocks - need special handling
-			messages := convertAnthropicBetaUserMessageToOpenAI(msg)
-			openaiReq.Messages = append(openaiReq.Messages, messages...)
-		} else if string(msg.Role) == "assistant" {
-			// Convert assistant message with potential tool_use blocks
-			openaiMsg := convertAnthropicBetaAssistantMessageToOpenAI(msg)
-			openaiReq.Messages = append(openaiReq.Messages, openaiMsg)
-		}
-	}
-
-	// Convert system message
-	if len(anthropicReq.System) > 0 {
-		systemStr := ConvertBetaTextBlocksToString(anthropicReq.System)
-		systemMsg := openai.SystemMessage(systemStr)
-		// Add system message at the beginning
-		openaiReq.Messages = append([]openai.ChatCompletionMessageParamUnion{systemMsg}, openaiReq.Messages...)
-	}
-
-	// Convert tools from Anthropic format to OpenAI format
-	if len(anthropicReq.Tools) > 0 {
-		if compatible {
-			openaiReq.Tools = ConvertAnthropicBetaToolsToOpenAIWithTransformedSchema(anthropicReq.Tools)
-		} else {
-			openaiReq.Tools = ConvertAnthropicBetaToolsToOpenAI(anthropicReq.Tools)
-		}
-		// Convert tool choice
-		openaiReq.ToolChoice = ConvertAnthropicBetaToolChoiceToOpenAI(&anthropicReq.ToolChoice)
-	}
-
-	config := &transformer.OpenAIConfig{
-		HasThinking:     isThinking,
-		ReasoningEffort: "low", // Default to "low" for OpenAI-compatible APIs
-	}
-
-	// Only set stream_options for streaming requests (per OpenAI API spec)
-	if isStreaming && !disableStreamUsage {
-		openaiReq.StreamOptions.IncludeUsage = param.Opt[bool]{Value: true}
-	}
-	return openaiReq, config
 }
 
 // ConvertBetaTextBlocksToString converts Anthropic beta TextBlockParam array to string
