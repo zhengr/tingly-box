@@ -282,7 +282,7 @@ func (s *Server) anthropicMessagesV1Beta(c *gin.Context, req protocol.AnthropicB
 			// Apply provider-specific transforms
 			transformedReq := transformer.ApplyProviderTransforms(openaiReq, provider, actualModel, config)
 			// Clean up temporary fields (e.g., x_thinking)
-			request.CleanupTempFields(transformedReq)
+			request.CleanupOpenaiFields(transformedReq)
 
 			// Use OpenAI Chat Completions path
 			if isStreaming {

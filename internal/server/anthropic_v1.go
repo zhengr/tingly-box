@@ -339,7 +339,7 @@ func (s *Server) anthropicMessagesV1(c *gin.Context, req protocol.AnthropicMessa
 		transformedReq := transformer.ApplyProviderTransforms(openaiReq, provider, actualModel, config)
 
 		// Clean up temporary fields (e.g., x_thinking)
-		request.CleanupTempFields(transformedReq)
+		request.CleanupOpenaiFields(transformedReq)
 
 		logrus.Debugf("[AnthropicV1] Using Chat Completions API for model=%s", actualModel)
 		// Use OpenAI conversion path (default behavior)

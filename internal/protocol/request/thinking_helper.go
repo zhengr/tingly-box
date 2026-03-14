@@ -47,8 +47,13 @@ func convertBetaToolResultContent(content []anthropic.BetaToolResultBlockParamCo
 	return result.String()
 }
 
-// CleanupTempFields removes temporary fields used during transformation
-func CleanupTempFields(req *openai.ChatCompletionNewParams) {
+// CleanupOpenaiFields removes temporary fields used during transformation
+func CleanupOpenaiFields(req *openai.ChatCompletionNewParams) {
+	// Clear empty tools array
+	if len(req.Tools) == 0 {
+		req.Tools = nil
+	}
+
 	for i := range req.Messages {
 		if req.Messages[i].OfAssistant != nil {
 			// Convert to map to remove temporary fields

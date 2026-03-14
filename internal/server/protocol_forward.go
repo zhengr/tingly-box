@@ -122,11 +122,6 @@ func ForwardOpenAIChatStream(fc *ForwardContext, wrapper *client.OpenAIClient, r
 
 	ctx, cancel := fc.PrepareContext(req)
 
-	// Clear empty tools array
-	if len(req.Tools) == 0 {
-		req.Tools = nil
-	}
-
 	stream := wrapper.ChatCompletionsNewStreaming(ctx, *req)
 	return stream, cancel, nil
 }
