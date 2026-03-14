@@ -134,11 +134,6 @@ func ForwardOpenAIChatStream(fc *ForwardContext, wrapper *client.OpenAIClient, r
 
 	logrus.Debugf("provider: %s (streaming)", fc.Provider.Name)
 
-	// Apply provider-specific transformations
-	config := buildOpenAIConfig(req)
-	transformedReq := transformer.ApplyProviderTransforms(req, fc.Provider, req.Model, config)
-	*req = *transformedReq
-
 	// Clear empty tools array
 	if len(req.Tools) == 0 {
 		req.Tools = nil

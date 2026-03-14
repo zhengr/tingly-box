@@ -280,9 +280,9 @@ func (s *Server) anthropicMessagesV1Beta(c *gin.Context, req protocol.AnthropicB
 
 			openaiReq, config := request.ConvertAnthropicBetaToOpenAIRequest(&req.BetaMessageNewParams, true, isStreaming, disableStreamUsage)
 			// Apply provider-specific transforms
-			openaiReq = transformer.ApplyProviderTransforms(openaiReq, provider, actualModel, config)
+			transformedReq := transformer.ApplyProviderTransforms(openaiReq, provider, actualModel, config)
 			// Clean up temporary fields (e.g., x_thinking)
-			request.CleanupTempFields(openaiReq)
+			request.CleanupTempFields(transformedReq)
 
 			// Use OpenAI Chat Completions path
 			if isStreaming {
@@ -293,9 +293,9 @@ func (s *Server) anthropicMessagesV1Beta(c *gin.Context, req protocol.AnthropicB
 				}
 
 				// Create streaming request with request context for proper cancellation
-				wrapper := s.clientPool.GetOpenAIClient(provider, openaiReq.Model)
+				wrapper := s.clientPool.GetOpenAIClient(provider, transformedReq.Model)
 				fc := NewForwardContext(c.Request.Context(), provider)
-				streamResp, cancel, err := ForwardOpenAIChatStream(fc, wrapper, openaiReq)
+				streamResp, cancel, err := ForwardOpenAIChatStream(fc, wrapper, transformedReq)
 				if cancel != nil {
 					defer cancel()
 				}
@@ -308,7 +308,7 @@ func (s *Server) anthropicMessagesV1Beta(c *gin.Context, req protocol.AnthropicB
 				}
 
 				// Handle the streaming response
-				usage, err := stream.HandleOpenAIToAnthropicBetaStream(c, openaiReq, streamResp, proxyModel)
+				usage, err := stream.HandleOpenAIToAnthropicBetaStream(c, transformedReq, streamResp, proxyModel)
 				if err != nil {
 					s.trackUsageFromContext(c, usage.InputTokens, usage.OutputTokens, err)
 					stream.SendInternalError(c, err.Error())
@@ -328,9 +328,9 @@ func (s *Server) anthropicMessagesV1Beta(c *gin.Context, req protocol.AnthropicB
 				}
 
 			} else {
-				wrapper := s.clientPool.GetOpenAIClient(provider, openaiReq.Model)
+				wrapper := s.clientPool.GetOpenAIClient(provider, transformedReq.Model)
 				fc := NewForwardContext(nil, provider)
-				resp, _, err := ForwardOpenAIChat(fc, wrapper, openaiReq)
+				resp, _, err := ForwardOpenAIChat(fc, wrapper, transformedReq)
 				if err != nil {
 					stream.SendForwardingError(c, err)
 					if recorder != nil {

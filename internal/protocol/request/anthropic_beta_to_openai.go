@@ -9,30 +9,7 @@ import (
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/shared"
 	"github.com/tingly-dev/tingly-box/internal/protocol/transformer"
-	"github.com/tingly-dev/tingly-box/internal/typ"
 )
-
-// ConvertAnthropicBetaToOpenAIRequestWithProvider converts Anthropic beta request to OpenAI format
-// and applies provider-specific transformations
-func ConvertAnthropicBetaToOpenAIRequestWithProvider(
-	anthropicReq *anthropic.BetaMessageNewParams,
-	compatible bool,
-	provider *typ.Provider,
-	model string,
-	isStreaming bool,
-	disableStreamUsage bool,
-) *openai.ChatCompletionNewParams {
-	// Base conversion
-	openaiReq, config := ConvertAnthropicBetaToOpenAIRequest(anthropicReq, compatible, isStreaming, disableStreamUsage)
-
-	// Apply provider-specific transforms
-	openaiReq = transformer.ApplyProviderTransforms(openaiReq, provider, model, config)
-
-	// Clean up temporary fields (e.g., x_thinking)
-	cleanupTempFields(openaiReq)
-
-	return openaiReq
-}
 
 // ConvertAnthropicBetaToolsToOpenAI converts Anthropic beta tools to OpenAI format
 func ConvertAnthropicBetaToolsToOpenAI(tools []anthropic.BetaToolUnionParam) []openai.ChatCompletionToolUnionParam {

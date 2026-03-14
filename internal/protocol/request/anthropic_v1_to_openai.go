@@ -9,29 +9,62 @@ import (
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/shared"
 	"github.com/tingly-dev/tingly-box/internal/protocol/transformer"
-	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
-// ConvertAnthropicToOpenAIRequestWithProvider converts Anthropic request to OpenAI format
-// and applies provider-specific transformations
-func ConvertAnthropicToOpenAIRequestWithProvider(
-	anthropicReq *anthropic.MessageNewParams,
-	compatible bool,
-	provider *typ.Provider,
-	model string,
-	isStreaming bool,
-	disableStreamUsage bool,
-) *openai.ChatCompletionNewParams {
-	// Base conversion
-	openaiReq, config := ConvertAnthropicToOpenAIRequest(anthropicReq, compatible, isStreaming, disableStreamUsage)
+// ConvertAnthropicToOpenAIRequest converts Anthropic request to OpenAI format
+// Returns the OpenAI request and a config object with metadata for provider transforms
+func ConvertAnthropicToOpenAIRequest(anthropicReq *anthropic.MessageNewParams, compatible bool, isStreaming bool, disableStreamUsage bool) (*openai.ChatCompletionNewParams, *transformer.OpenAIConfig) {
+	openaiReq := &openai.ChatCompletionNewParams{
+		Model: openai.ChatModel(anthropicReq.Model),
+	}
 
-	// Apply provider-specific transforms
-	openaiReq = transformer.ApplyProviderTransforms(openaiReq, provider, model, config)
+	isThinking := IsThinkingEnabled(anthropicReq)
 
-	// Clean up temporary fields (e.g., x_thinking)
-	cleanupTempFields(openaiReq)
+	// Set MaxTokens
+	openaiReq.MaxTokens = openai.Opt(anthropicReq.MaxTokens)
 
-	return openaiReq
+	// Convert messages
+	for _, msg := range anthropicReq.Messages {
+		if string(msg.Role) == "user" {
+			// User messages may contain tool_result blocks - need special handling
+			messages := convertAnthropicUserMessageToOpenAI(msg)
+			openaiReq.Messages = append(openaiReq.Messages, messages...)
+		} else if string(msg.Role) == "assistant" {
+			// Convert assistant message with potential tool_use blocks
+			openaiMsg := convertAnthropicAssistantMessageToOpenAI(msg)
+			openaiReq.Messages = append(openaiReq.Messages, openaiMsg)
+		}
+	}
+
+	// Convert system message
+	if len(anthropicReq.System) > 0 {
+		systemStr := ConvertTextBlocksToString(anthropicReq.System)
+		systemMsg := openai.SystemMessage(systemStr)
+		// Add system message at the beginning
+		openaiReq.Messages = append([]openai.ChatCompletionMessageParamUnion{systemMsg}, openaiReq.Messages...)
+	}
+
+	// Convert tools from Anthropic format to OpenAI format
+	if len(anthropicReq.Tools) > 0 {
+		if compatible {
+			openaiReq.Tools = ConvertAnthropicToolsToOpenAIWithTransformedSchema(anthropicReq.Tools)
+		} else {
+			openaiReq.Tools = ConvertAnthropicToolsToOpenAI(anthropicReq.Tools)
+		}
+		// Convert tool choice
+		openaiReq.ToolChoice = ConvertAnthropicToolChoiceToOpenAI(&anthropicReq.ToolChoice)
+	}
+
+	config := &transformer.OpenAIConfig{
+		HasThinking:     isThinking,
+		ReasoningEffort: "low", // Default to "low" for OpenAI-compatible APIs
+	}
+
+	// Only set stream_options for streaming requests (per OpenAI API spec)
+	if isStreaming && !disableStreamUsage {
+		openaiReq.StreamOptions.IncludeUsage = param.Opt[bool]{Value: true}
+	}
+	return openaiReq, config
 }
 
 // ConvertAnthropicToolsToOpenAI converts Anthropic tools to OpenAI format
@@ -110,62 +143,6 @@ func ConvertAnthropicToolChoiceToOpenAI(tc *anthropic.ToolChoiceUnionParam) open
 	return openai.ChatCompletionToolChoiceOptionUnionParam{
 		OfAuto: openai.Opt("auto"),
 	}
-}
-
-// ConvertAnthropicToOpenAIRequest converts Anthropic request to OpenAI format
-// Returns the OpenAI request and a config object with metadata for provider transforms
-func ConvertAnthropicToOpenAIRequest(anthropicReq *anthropic.MessageNewParams, compatible bool, isStreaming bool, disableStreamUsage bool) (*openai.ChatCompletionNewParams, *transformer.OpenAIConfig) {
-	openaiReq := &openai.ChatCompletionNewParams{
-		Model: openai.ChatModel(anthropicReq.Model),
-	}
-
-	isThinking := IsThinkingEnabled(anthropicReq)
-
-	// Set MaxTokens
-	openaiReq.MaxTokens = openai.Opt(anthropicReq.MaxTokens)
-
-	// Convert messages
-	for _, msg := range anthropicReq.Messages {
-		if string(msg.Role) == "user" {
-			// User messages may contain tool_result blocks - need special handling
-			messages := convertAnthropicUserMessageToOpenAI(msg)
-			openaiReq.Messages = append(openaiReq.Messages, messages...)
-		} else if string(msg.Role) == "assistant" {
-			// Convert assistant message with potential tool_use blocks
-			openaiMsg := convertAnthropicAssistantMessageToOpenAI(msg)
-			openaiReq.Messages = append(openaiReq.Messages, openaiMsg)
-		}
-	}
-
-	// Convert system message
-	if len(anthropicReq.System) > 0 {
-		systemStr := ConvertTextBlocksToString(anthropicReq.System)
-		systemMsg := openai.SystemMessage(systemStr)
-		// Add system message at the beginning
-		openaiReq.Messages = append([]openai.ChatCompletionMessageParamUnion{systemMsg}, openaiReq.Messages...)
-	}
-
-	// Convert tools from Anthropic format to OpenAI format
-	if len(anthropicReq.Tools) > 0 {
-		if compatible {
-			openaiReq.Tools = ConvertAnthropicToolsToOpenAIWithTransformedSchema(anthropicReq.Tools)
-		} else {
-			openaiReq.Tools = ConvertAnthropicToolsToOpenAI(anthropicReq.Tools)
-		}
-		// Convert tool choice
-		openaiReq.ToolChoice = ConvertAnthropicToolChoiceToOpenAI(&anthropicReq.ToolChoice)
-	}
-
-	config := &transformer.OpenAIConfig{
-		HasThinking:     isThinking,
-		ReasoningEffort: "low", // Default to "low" for OpenAI-compatible APIs
-	}
-
-	// Only set stream_options for streaming requests (per OpenAI API spec)
-	if isStreaming && !disableStreamUsage {
-		openaiReq.StreamOptions.IncludeUsage = param.Opt[bool]{Value: true}
-	}
-	return openaiReq, config
 }
 
 // convertToolResultContent extracts the content from a tool result block
