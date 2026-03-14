@@ -1,9 +1,11 @@
 package command
 
 import (
+	"bufio"
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -49,7 +51,8 @@ func tokenShowCommand(appManager *AppManager) *cobra.Command {
 
 // tokenUserCommand creates the set-user-token subcommand
 func tokenUserCommand(appManager *AppManager) *cobra.Command {
-	return &cobra.Command{
+	var force bool
+	cmd := &cobra.Command{
 		Use:   "user [token]",
 		Short: "Set UI management key (user token)",
 		Long: `Set the UI management key for dashboard access.
@@ -57,26 +60,36 @@ func tokenUserCommand(appManager *AppManager) *cobra.Command {
 If no token is provided, auto-generates a secure token.
 You can also provide your own token as an argument.
 
+Use -y to skip confirmation when replacing existing token.
+
 Examples:
-  token set-user              # Auto-generate
-  token set-user my-secret-key`,
+  token user                 # Auto-generate and confirm
+  token user -y              # Auto-generate without confirmation
+  token user my-secret-key   # Use custom token`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runTokenUser(appManager, args)
+			return runTokenUser(appManager, args, force)
 		},
 	}
+	cmd.Flags().BoolVarP(&force, "yes", "y", false, "Skip confirmation and replace existing token")
+	return cmd
 }
 
 // tokenAPIKeyCommand creates the generate-model-token subcommand
 func tokenAPIKeyCommand(appManager *AppManager) *cobra.Command {
-	return &cobra.Command{
+	var force bool
+	cmd := &cobra.Command{
 		Use:   "apikey",
 		Short: "Generate a new model API key",
-		Long:  "Generate and set a new secure model API key using JWT.",
+		Long: `Generate and set a new secure model API key using JWT.
+
+Use -y to skip confirmation when replacing existing API key.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runTokenAPIKey(appManager)
+			return runTokenAPIKey(appManager, force)
 		},
 	}
+	cmd.Flags().BoolVarP(&force, "yes", "y", false, "Skip confirmation and replace existing API key")
+	return cmd
 }
 
 // runTokenShow displays current token status
@@ -98,7 +111,7 @@ func runTokenShow(appManager *AppManager) error {
 	} else {
 		fmt.Println("Status: Not configured")
 		fmt.Println("Note: The server will auto-generate one on startup if needed.")
-		fmt.Println("Use: 'token set-user' to set one now.")
+		fmt.Println("Use: 'token user' to set one now.")
 	}
 
 	// Display Model API Key
@@ -113,20 +126,21 @@ func runTokenShow(appManager *AppManager) error {
 	} else {
 		fmt.Println("Status: Not configured")
 		fmt.Println("Note: API requests require authentication.")
-		fmt.Println("Use: 'token generate-model' to generate one now.")
+		fmt.Println("Use: 'token apikey' to generate one now.")
 	}
 
 	fmt.Println("\n" + repeat("=", 60))
 	fmt.Println("\nCommands:")
-	fmt.Println("  token set-user         - Set UI management key (auto-generate or custom)")
-	fmt.Println("  token generate-model   - Generate new model API key")
+	fmt.Println("  token user [token]    - Set UI management key (auto-generate or custom)")
+	fmt.Println("  token apikey          - Generate new model API key")
+	fmt.Println("  token show            - Display current tokens")
 	fmt.Println(repeat("=", 60))
 
 	return nil
 }
 
 // runTokenUser sets the user token
-func runTokenUser(appManager *AppManager, args []string) error {
+func runTokenUser(appManager *AppManager, args []string, force bool) error {
 	globalConfig := appManager.GetGlobalConfig()
 	var token string
 
@@ -136,6 +150,20 @@ func runTokenUser(appManager *AppManager, args []string) error {
 		fmt.Printf("Generated token: %s\n", token)
 	} else {
 		token = args[0]
+	}
+
+	// Check if token already exists and need confirmation
+	if globalConfig.HasUserToken() && !force {
+		fmt.Printf("\nCurrent token: %s\n", globalConfig.GetUserToken())
+		fmt.Printf("New token: %s\n", token)
+		confirmed, err := promptForConfirmation(bufio.NewReader(os.Stdin), "Replace existing token? (y/N): ", false)
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			fmt.Println("Cancelled.")
+			return nil
+		}
 	}
 
 	// Set the token
@@ -150,7 +178,7 @@ func runTokenUser(appManager *AppManager, args []string) error {
 }
 
 // runTokenAPIKey generates a new model API key
-func runTokenAPIKey(appManager *AppManager) error {
+func runTokenAPIKey(appManager *AppManager, force bool) error {
 	globalConfig := appManager.GetGlobalConfig()
 
 	jwtManager := auth.NewJWTManager(appManager.AppConfig().GetJWTSecret())
@@ -160,6 +188,19 @@ func runTokenAPIKey(appManager *AppManager) error {
 	}
 
 	fmt.Printf("\nGenerated API Key: %s\n", apiKey)
+
+	// Check if token already exists and need confirmation
+	if globalConfig.HasModelToken() && !force {
+		fmt.Printf("\nCurrent API key: %s\n", globalConfig.GetModelToken())
+		confirmed, err := promptForConfirmation(bufio.NewReader(os.Stdin), "Replace existing API key? (y/N): ", false)
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			fmt.Println("Cancelled.")
+			return nil
+		}
+	}
 
 	// Set the token
 	if err := globalConfig.SetModelToken(apiKey); err != nil {
