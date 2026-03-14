@@ -252,7 +252,7 @@ func (s *Server) anthropicMessagesV1Beta(c *gin.Context, req protocol.AnthropicB
 		if useResponsesAPI {
 			// Use Responses API path (for Codex and other models that prefer it)
 			// Convert Anthropic beta request to Responses API format
-			responsesReq := request.ConvertAnthropicBetaToResponsesRequestWithProvider(&req.BetaMessageNewParams, provider, actualModel)
+			responsesReq := request.ConvertAnthropicBetaToResponsesRequest(&req.BetaMessageNewParams)
 
 			// Set the rule and provider in context so middleware can use the same rule
 			if rule != nil {

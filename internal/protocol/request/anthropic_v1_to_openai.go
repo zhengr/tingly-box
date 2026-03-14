@@ -9,7 +9,6 @@ import (
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/shared"
 	"github.com/tingly-dev/tingly-box/internal/protocol/transformer"
-	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
 // ConvertAnthropicToOpenAIRequest converts Anthropic request to OpenAI format
@@ -66,28 +65,6 @@ func ConvertAnthropicToOpenAIRequest(anthropicReq *anthropic.MessageNewParams, c
 		openaiReq.StreamOptions.IncludeUsage = param.Opt[bool]{Value: true}
 	}
 	return openaiReq, config
-}
-
-// ConvertAnthropicToOpenAIRequestWithProvider converts Anthropic request to OpenAI format
-// and applies provider-specific transformations
-func ConvertAnthropicToOpenAIRequestWithProvider(
-	anthropicReq *anthropic.MessageNewParams,
-	compatible bool,
-	provider *typ.Provider,
-	model string,
-	isStreaming bool,
-	disableStreamUsage bool,
-) *openai.ChatCompletionNewParams {
-	// Base conversion
-	openaiReq, config := ConvertAnthropicToOpenAIRequest(anthropicReq, compatible, isStreaming, disableStreamUsage)
-
-	// Apply provider-specific transforms
-	openaiReq = transformer.ApplyProviderTransforms(openaiReq, provider, model, config)
-
-	// Clean up temporary fields (e.g., x_thinking)
-	CleanupTempFields(openaiReq)
-
-	return openaiReq
 }
 
 // ConvertAnthropicToolsToOpenAI converts Anthropic tools to OpenAI format
