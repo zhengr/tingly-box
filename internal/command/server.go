@@ -93,11 +93,11 @@ func doStopServer(appManager *AppManager) error {
 
 // startServer handles the server starting logic
 func startServer(appManager *AppManager, opts options.StartServerOptions) error {
-	return startServerWithHook(appManager, opts, nil)
+	return startServerWithHook(appManager, opts)
 }
 
-// startServerWithHook handles the server starting logic with an optional setup hook.
-func startServerWithHook(appManager *AppManager, opts options.StartServerOptions, hook func(*ServerManager) error) error {
+// startServerWithHook handles the server starting logic with optional setup hooks.
+func startServerWithHook(appManager *AppManager, opts options.StartServerOptions, hooks ...func(*ServerManager) error) error {
 	appConfig := appManager.AppConfig()
 
 	// Set logrus level based on debug flag
@@ -252,7 +252,10 @@ func startServerWithHook(appManager *AppManager, opts options.StartServerOptions
 		server.WithMultiLogger(multiLogger),
 	)
 
-	if hook != nil {
+	for _, hook := range hooks {
+		if hook == nil {
+			continue
+		}
 		if err := hook(serverManager); err != nil {
 			fileLock.Unlock()
 			return err
@@ -301,12 +304,12 @@ func startServerWithHook(appManager *AppManager, opts options.StartServerOptions
 
 // StartCommand represents the start server command
 func StartCommand(appManager *AppManager) *cobra.Command {
-	return StartCommandWithHook(appManager, nil)
+	return StartCommandWithHook(appManager)
 }
 
-// StartCommandWithHook represents the start server command with a setup hook
-// that runs after the server manager is created and before the server starts.
-func StartCommandWithHook(appManager *AppManager, hook func(*ServerManager) error) *cobra.Command {
+// StartCommandWithHook represents the start server command with setup hooks
+// that run after the server manager is created and before the server starts.
+func StartCommandWithHook(appManager *AppManager, hooks ...func(*ServerManager) error) *cobra.Command {
 	var flags options.StartFlags
 
 	cmd := &cobra.Command{
@@ -316,7 +319,7 @@ func StartCommandWithHook(appManager *AppManager, hook func(*ServerManager) erro
 The server will handle request routing to configured AI providers.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts := options.ResolveStartOptions(cmd, flags, appManager.AppConfig())
-			return startServerWithHook(appManager, opts, hook)
+			return startServerWithHook(appManager, opts, hooks...)
 		},
 	}
 
