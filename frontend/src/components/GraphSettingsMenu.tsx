@@ -20,12 +20,16 @@ export interface GraphSettingsMenuProps {
     active: boolean;
     allowToggleRule: boolean;
     saving: boolean;
+    cursorCompatEnabled?: boolean;
+    cursorCompatAutoEnabled?: boolean;
     onProbe: () => void;
     onExport: (format: ExportFormat) => void;
     onExportAsJsonlToClipboard?: () => void;
     onExportAsBase64ToClipboard?: () => void;
     onDelete: () => void;
     onToggleActive: () => void;
+    onToggleCursorCompat?: () => void;
+    onToggleCursorCompatAuto?: () => void;
 }
 
 export const GraphSettingsMenu = ({
@@ -35,12 +39,16 @@ export const GraphSettingsMenu = ({
     active,
     allowToggleRule,
     saving,
+    cursorCompatEnabled,
+    cursorCompatAutoEnabled,
     onProbe,
     onExport,
     onExportAsJsonlToClipboard,
     onExportAsBase64ToClipboard,
     onDelete,
     onToggleActive,
+    onToggleCursorCompat,
+    onToggleCursorCompatAuto,
 }: GraphSettingsMenuProps) => {
     const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
     const [exportMenuAnchorEl, setExportMenuAnchorEl] = useState<null | HTMLElement>(null);
@@ -95,6 +103,34 @@ export const GraphSettingsMenu = ({
                         </>
                     )}
                 </MenuItem>
+
+                {onToggleCursorCompat && (
+                    <MenuItem onClick={() => { closeMenu(); onToggleCursorCompat(); }}>
+                        {cursorCompatEnabled ? (
+                            <>
+                                <ActiveIcon fontSize="small" sx={{ mr: 1 }} />Cursor Compatibility: On
+                            </>
+                        ) : (
+                            <>
+                                <InactiveIcon fontSize="small" sx={{ mr: 1 }} />Cursor Compatibility: Off
+                            </>
+                        )}
+                    </MenuItem>
+                )}
+
+                {onToggleCursorCompatAuto && (
+                    <MenuItem onClick={() => { closeMenu(); onToggleCursorCompatAuto(); }}>
+                        {cursorCompatAutoEnabled ? (
+                            <>
+                                <ActiveIcon fontSize="small" sx={{ mr: 1 }} />Cursor Auto-Detect: On
+                            </>
+                        ) : (
+                            <>
+                                <InactiveIcon fontSize="small" sx={{ mr: 1 }} />Cursor Auto-Detect: Off
+                            </>
+                        )}
+                    </MenuItem>
+                )}
 
                 {allowDeleteRule && (
                     <MenuItem onClick={() => { closeMenu(); onDelete(); }} sx={{ color: 'error.main' }}>

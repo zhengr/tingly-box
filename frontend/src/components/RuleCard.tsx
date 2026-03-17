@@ -168,6 +168,8 @@ export const RuleCard: React.FC<RuleCardProps> = ({
     if (!configRecord) return null;
 
     const isSmartMode = rule.smart_enabled;
+    const cursorCompatEnabled = configRecord.flags?.cursorCompat || false;
+    const cursorCompatAutoEnabled = configRecord.flags?.cursorCompatAuto || false;
 
     // Extra actions menu - shared between RoutingGraph and SmartRoutingGraph
     const extraActions = (
@@ -178,12 +180,22 @@ export const RuleCard: React.FC<RuleCardProps> = ({
             active={configRecord.active}
             allowToggleRule={allowToggleRule}
             saving={saving}
+            cursorCompatEnabled={cursorCompatEnabled}
+            cursorCompatAutoEnabled={cursorCompatAutoEnabled}
             onProbe={probeState.handleProbe}
             onExport={handleExport}
             onExportAsJsonlToClipboard={handleExportAsJsonlToClipboard}
             onExportAsBase64ToClipboard={handleExportAsBase64ToClipboard}
             onDelete={handleDeleteButtonClick}
             onToggleActive={() => updateField(configRecord, setConfigRecord, 'active', !configRecord.active)}
+            onToggleCursorCompat={() => updateField(configRecord, setConfigRecord, 'flags', {
+                ...(configRecord.flags || {}),
+                cursorCompat: !cursorCompatEnabled,
+            })}
+            onToggleCursorCompatAuto={() => updateField(configRecord, setConfigRecord, 'flags', {
+                ...(configRecord.flags || {}),
+                cursorCompatAuto: !cursorCompatAutoEnabled,
+            })}
         />
     );
 
@@ -242,6 +254,7 @@ export const RuleCard: React.FC<RuleCardProps> = ({
                 configRecord={configRecord}
                 isProbing={probeState.isProbing}
                 probeResult={probeState.probeResult}
+                capabilityResult={probeState.capabilityResult}
                 detailsExpanded={probeState.detailsExpanded}
                 providerName={probeState.providerName}
                 onToggleDetails={probeState.handleToggleDetails}

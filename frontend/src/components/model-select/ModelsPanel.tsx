@@ -2,6 +2,7 @@ import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import NavigateBeforeIcon from '@mui/icons-material/NavigateBefore';
 import NavigateNextIcon from '@mui/icons-material/NavigateNext';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import BuildIcon from '@mui/icons-material/Build';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SearchIcon from '@mui/icons-material/Search';
 import BugReportIcon from '@mui/icons-material/BugReport';
@@ -15,7 +16,7 @@ import {
     TextField,
     Typography,
 } from '@mui/material';
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Provider } from '@/types/provider';
 import { getModelTypeInfo } from '@/utils/modelUtils';
 import { useCustomModels } from '@/hooks/useCustomModels';
@@ -28,6 +29,7 @@ import CustomModelCard from './CustomModelCard';
 import ModelCard from './ModelCard';
 import RecentModelsSection from './RecentModelsSection';
 import NewModelsSection from './NewModelsSection';
+import api from '@/services/api';
 
 export interface ModelsPanelProps {
     provider: Provider;
@@ -59,6 +61,8 @@ export function ModelsPanel({
     const { isModelProbing, refreshTrigger } = useModelSelectContext();
     const { recentModels } = useRecentModels();
     const { newModels, clearNewModels } = useNewModels();
+    const [toolSupportByModel, setToolSupportByModel] = useState<Record<string, boolean>>({});
+    const [toolProbing, setToolProbing] = useState(false);
 
     // Re-fetch provider models when refresh trigger changes (e.g., after custom model deletion)
     useEffect(() => {
@@ -66,6 +70,10 @@ export function ModelsPanel({
             fetchModels(provider.uuid);
         }
     }, [refreshTrigger, provider.uuid, fetchModels]);
+
+    useEffect(() => {
+        setToolSupportByModel({});
+    }, [provider.uuid]);
 
     const isProviderSelected = selectedProvider === provider.uuid;
     const isRefreshing = refreshingProviders.includes(provider.uuid);
@@ -124,6 +132,24 @@ export function ModelsPanel({
     const handlePageChange = useCallback((newPage: number) => {
         setCurrentPage(prev => ({ ...prev, [provider.uuid]: newPage }));
     }, [provider.uuid, setCurrentPage]);
+
+    const handleProbeToolSupport = useCallback(async () => {
+        if (!selectedModel || toolProbing) return;
+        setToolProbing(true);
+        try {
+            const result = await api.probeModelCapability(provider.uuid, selectedModel, true);
+            const supported = result?.data?.tool_parser_endpoint?.available;
+            if (supported) {
+                setToolSupportByModel(prev => ({ ...prev, [selectedModel]: true }));
+            }
+        } catch (err) {
+            // No-op: probe errors are displayed in the probe dialog elsewhere
+        } finally {
+            setToolProbing(false);
+        }
+    }, [provider.uuid, selectedModel, toolProbing]);
+
+    const toolSupportSet = useMemo(() => toolSupportByModel, [toolSupportByModel]);
 
     // Dev mode test handler: Simulate removing some models to test "new models" feature
     const handleDevTestRemoveModels = useCallback(async () => {
@@ -214,6 +240,15 @@ export function ModelsPanel({
                                 {testing ? 'Testing...' : 'Test'}
                             </Button>
                         )}
+                        <Button
+                            variant="outlined"
+                            startIcon={toolProbing ? <CircularProgress size={16} /> : <BuildIcon />}
+                            onClick={handleProbeToolSupport}
+                            disabled={!selectedModel || toolProbing}
+                            sx={{ height: 40, minWidth: 140 }}
+                        >
+                            {toolProbing ? 'Probing...' : 'Probe Tool Support'}
+                        </Button>
                     </Stack>
                     <Typography variant="caption" color="text.secondary">
                         {pagination.totalItems} models
@@ -258,6 +293,7 @@ export function ModelsPanel({
                                     onClick={() => onModelSelect(provider, starModel)}
                                     variant="starred"
                                     loading={provider.auth_type === 'oauth' && isModelProbing(`${provider.uuid}-${starModel}`)}
+                                    showToolSupport={!!toolSupportSet[starModel]}
                                 />
                             ))}
                         </Box>
@@ -291,6 +327,7 @@ export function ModelsPanel({
                                         onSelect={() => onModelSelect(provider, model)}
                                         variant={variant}
                                         loading={provider.auth_type === 'oauth' && isModelProbing(`${provider.uuid}-${model}`)}
+                                        showToolSupport={!!toolSupportSet[model]}
                                     />
                                 );
                             } else {
@@ -302,6 +339,7 @@ export function ModelsPanel({
                                         onClick={() => onModelSelect(provider, model)}
                                         variant="standard"
                                         loading={provider.auth_type === 'oauth' && isModelProbing(`${provider.uuid}-${model}`)}
+                                        showToolSupport={!!toolSupportSet[model]}
                                     />
                                 );
                             }

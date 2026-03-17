@@ -196,6 +196,9 @@ func (s *Server) OpenAIChatCompletions(c *gin.Context) {
 	maxAllowed := s.templateManager.GetMaxTokensForModelByProvider(provider, actualModel)
 	responseModel := proxyModel
 
+	cursorCompat := resolveCursorCompat(c, rule)
+	applyCursorCompatFlag(&req.ChatCompletionNewParams, cursorCompat)
+
 	// Set tracking context with all metadata (eliminates need for explicit parameter passing)
 	SetTrackingContext(c, rule, provider, actualModel, responseModel, isStreaming)
 
@@ -205,6 +208,10 @@ func (s *Server) OpenAIChatCompletions(c *gin.Context) {
 
 	// === Tool Interceptor: Check if enabled and should be used ===
 	shouldIntercept, shouldStripTools, _ := s.resolveToolInterceptor(provider, hasBuiltInWebSearch)
+
+	if !s.enforceToolParserSupport(c, provider, actualModel, &req.ChatCompletionNewParams) {
+		return
+	}
 
 	switch apiStyle {
 	default:
@@ -237,9 +244,9 @@ func (s *Server) OpenAIChatCompletions(c *gin.Context) {
 			}
 
 			// Get scenario config for DisableStreamUsage flag
-			disableStreamUsage := false
+			disableStreamUsage := cursorCompat
 			if scenarioConfig := s.config.GetScenarioConfig(scenarioType); scenarioConfig != nil {
-				disableStreamUsage = scenarioConfig.Flags.DisableStreamUsage
+				disableStreamUsage = disableStreamUsage || scenarioConfig.Flags.DisableStreamUsage
 			}
 
 			inputTokens, outputTokens, err := stream.HandleAnthropicToOpenAIStreamResponse(c, &anthropicReq, streamResp, responseModel, disableStreamUsage)
@@ -355,9 +362,9 @@ func (s *Server) OpenAIChatCompletions(c *gin.Context) {
 
 		if isStreaming {
 			// Get scenario config for DisableStreamUsage flag
-			disableStreamUsage := false
+			disableStreamUsage := cursorCompat
 			if scenarioConfig := s.config.GetScenarioConfig(scenarioType); scenarioConfig != nil {
-				disableStreamUsage = scenarioConfig.Flags.DisableStreamUsage
+				disableStreamUsage = disableStreamUsage || scenarioConfig.Flags.DisableStreamUsage
 			}
 
 			s.handleOpenAIChatStreamingRequest(c, provider, transformedReq, responseModel, shouldIntercept, shouldStripTools, disableStreamUsage)
