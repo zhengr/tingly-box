@@ -152,6 +152,28 @@ export function ModelsPanel({
         }
     }, [provider.uuid, selectedModel, toolProbing, showSnackbar]);
 
+    const buildProbeCurl = useCallback(() => {
+        if (!selectedModel) return '';
+        const baseUrl = window.location.origin;
+        return [
+            `curl -X POST '${baseUrl}/api/v1/probe/model-capability' \\`,
+            `  -H 'Content-Type: application/json' \\`,
+            `  -H 'Authorization: Bearer YOUR_TOKEN' \\`,
+            `  -d '{\"provider_uuid\":\"${provider.uuid}\",\"model_id\":\"${selectedModel}\",\"force_refresh\":true}'`,
+        ].join('\n');
+    }, [provider.uuid, selectedModel]);
+
+    const handleCopyProbeCurl = useCallback(async () => {
+        if (!selectedModel) return;
+        const curlCmd = buildProbeCurl();
+        try {
+            await navigator.clipboard.writeText(curlCmd);
+            showSnackbar('Probe curl copied to clipboard', 'success');
+        } catch {
+            showSnackbar('Failed to copy probe curl', 'error');
+        }
+    }, [selectedModel, buildProbeCurl, showSnackbar]);
+
     const toolSupportSet = useMemo(() => toolSupportByModel, [toolSupportByModel]);
 
     // Dev mode test handler: Simulate removing some models to test "new models" feature
@@ -257,6 +279,40 @@ export function ModelsPanel({
                         {pagination.totalItems} models
                     </Typography>
                 </Stack>
+
+                {selectedModel && (
+                    <Box
+                        sx={{
+                            border: 1,
+                            borderColor: 'divider',
+                            borderRadius: 2,
+                            p: 1.5,
+                            bgcolor: 'background.paper',
+                        }}
+                    >
+                        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                            <Typography variant="caption" color="text.secondary">
+                                Probe curl for {selectedModel}
+                            </Typography>
+                            <Button size="small" variant="outlined" onClick={handleCopyProbeCurl}>
+                                Copy curl
+                            </Button>
+                        </Stack>
+                        <Box
+                            component="pre"
+                            sx={{
+                                m: 0,
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word',
+                                fontSize: '0.75rem',
+                                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                                color: 'text.primary',
+                            }}
+                        >
+                            {buildProbeCurl()}
+                        </Box>
+                    </Box>
+                )}
 
                 {/* New Models Section */}
                 {newModels[provider.uuid]?.newModels && newModels[provider.uuid].newModels.length > 0 && (
