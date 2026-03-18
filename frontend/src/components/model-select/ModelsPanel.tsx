@@ -22,6 +22,7 @@ import {
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Provider } from '@/types/provider';
 import { getModelTypeInfo } from '@/utils/modelUtils';
+import { getApiBaseUrl } from '@/utils/protocol';
 import { useCustomModels } from '@/hooks/useCustomModels';
 import { useProviderModels } from '@/hooks/useProviderModels';
 import { usePagination } from '@/hooks/usePagination';
@@ -67,6 +68,7 @@ export function ModelsPanel({
     const [toolSupportByModel, setToolSupportByModel] = useState<Record<string, boolean>>({});
     const [toolProbing, setToolProbing] = useState(false);
     const [probeMenuAnchor, setProbeMenuAnchor] = useState<null | HTMLElement>(null);
+    const [baseApiUrl, setBaseApiUrl] = useState('');
 
     // Re-fetch provider models when refresh trigger changes (e.g., after custom model deletion)
     useEffect(() => {
@@ -78,6 +80,20 @@ export function ModelsPanel({
     useEffect(() => {
         setToolSupportByModel({});
     }, [provider.uuid]);
+
+    useEffect(() => {
+        let mounted = true;
+        getApiBaseUrl()
+            .then((url) => {
+                if (mounted) setBaseApiUrl(url);
+            })
+            .catch(() => {
+                if (mounted) setBaseApiUrl('');
+            });
+        return () => {
+            mounted = false;
+        };
+    }, []);
 
     const isProviderSelected = selectedProvider === provider.uuid;
     const isRefreshing = refreshingProviders.includes(provider.uuid);
@@ -170,7 +186,7 @@ export function ModelsPanel({
 
     const buildProbeCurl = useCallback(() => {
         if (!selectedModel) return '';
-        const baseUrl = `${window.location.origin}/tbe`;
+        const baseUrl = baseApiUrl || window.location.origin;
         const token = getProbeToken() || 'YOUR_TOKEN';
         return [
             `curl -X POST '${baseUrl}/api/v1/probe/model/capability' \\`,
