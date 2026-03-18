@@ -312,6 +312,9 @@ func (s *Server) OpenAIChatCompletions(c *gin.Context) {
 				}
 				openaiResp = roundtripped
 			}
+			if cursorCompat {
+				delete(openaiResp, "usage")
+			}
 			c.JSON(http.StatusOK, openaiResp)
 			return
 		}
@@ -369,7 +372,7 @@ func (s *Server) OpenAIChatCompletions(c *gin.Context) {
 
 			s.handleOpenAIChatStreamingRequest(c, provider, transformedReq, responseModel, shouldIntercept, shouldStripTools, disableStreamUsage)
 		} else {
-			s.handleNonStreamingRequest(c, provider, transformedReq, responseModel, shouldIntercept, shouldStripTools)
+			s.handleNonStreamingRequest(c, provider, transformedReq, responseModel, shouldIntercept, shouldStripTools, cursorCompat)
 		}
 	}
 }
