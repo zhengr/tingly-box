@@ -399,7 +399,7 @@ func (ap *AdaptiveProbe) probeToolParserEndpoint(ctx context.Context, provider *
 	requestBody := map[string]interface{}{
 		"model": modelID,
 		"messages": []map[string]string{
-			{"role": "user", "content": "Hi"},
+			{"role": "user", "content": "Please call the ping tool now."},
 		},
 		"max_tokens": 5,
 		"tools": []map[string]interface{}{
@@ -415,7 +415,12 @@ func (ap *AdaptiveProbe) probeToolParserEndpoint(ctx context.Context, provider *
 				},
 			},
 		},
-		"tool_choice": "auto",
+		"tool_choice": map[string]interface{}{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name": "ping",
+			},
+		},
 	}
 
 	bodyBytes, err := json.Marshal(requestBody)
