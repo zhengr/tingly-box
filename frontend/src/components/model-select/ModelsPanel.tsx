@@ -141,12 +141,12 @@ export function ModelsPanel({
             const supported = result?.data?.tool_parser_endpoint?.available;
             if (supported) {
                 setToolSupportByModel(prev => ({ ...prev, [selectedModel]: true }));
-                showSnackbar('Tool parser supported', 'success');
+                showSnackbar(`Tool parser supported for ${selectedModel}`, 'success');
             } else {
-                showSnackbar('Tool parser not supported', 'error');
+                showSnackbar(`Tool parser not supported for ${selectedModel}`, 'error');
             }
         } catch (err) {
-            showSnackbar('Tool parser probe failed', 'error');
+            showSnackbar(`Tool parser probe failed for ${selectedModel}`, 'error');
         } finally {
             setToolProbing(false);
         }
