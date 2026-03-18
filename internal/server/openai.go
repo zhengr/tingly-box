@@ -14,6 +14,7 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/protocol/request"
 	"github.com/tingly-dev/tingly-box/internal/protocol/stream"
 	"github.com/tingly-dev/tingly-box/internal/protocol/transform"
+	"github.com/tingly-dev/tingly-box/internal/protocol/transform/ops"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
@@ -194,7 +195,7 @@ func (s *Server) OpenAIChatCompletions(c *gin.Context) {
 	actualModel := selectedService.Model
 	req.Model = actualModel
 	maxAllowed := s.templateManager.GetMaxTokensForModelByProvider(provider, actualModel)
-	responseModel := proxyModel
+	responseModel := string(proxyModel)
 
 	cursorCompat := resolveCursorCompat(c, rule)
 	applyCursorCompatFlag(&req.ChatCompletionNewParams, cursorCompat)
@@ -226,7 +227,7 @@ func (s *Server) OpenAIChatCompletions(c *gin.Context) {
 		// Apply cursor_compat content normalization before converting to Anthropic format
 		// This ensures rich content is flattened for all providers when cursor_compat is enabled
 		if cursorCompat {
-			transformer.ApplyCursorCompatContentNormalization(&req.ChatCompletionNewParams)
+			ops.ApplyCursorCompatContentNormalization(&req.ChatCompletionNewParams)
 		}
 		anthropicReq := request.ConvertOpenAIToAnthropicRequest(&req.ChatCompletionNewParams, int64(maxAllowed))
 		if isStreaming {

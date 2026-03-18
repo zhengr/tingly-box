@@ -124,7 +124,7 @@ func ForwardOpenAIChatStream(fc *ForwardContext, wrapper *client.OpenAIClient, r
 
 	// Apply provider-specific transformations
 	config := buildOpenAIConfig(req)
-	transformedReq := transformer.ApplyProviderTransforms(req, fc.Provider, req.Model, config)
+	transformedReq := ops.ApplyProviderTransforms(req, fc.Provider.APIBase, string(req.Model), config)
 	*req = *transformedReq
 
 	stream := wrapper.ChatCompletionsNewStreaming(ctx, *req)
