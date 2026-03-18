@@ -175,7 +175,12 @@ export const RuleCard: React.FC<RuleCardProps> = ({
 
     const handleOpenFlagEditor = useCallback(() => {
         if (!configRecord) return;
-        setFlagInput(formatRuleFlags(configRecord.flags));
+        const currentFlags = formatRuleFlags(configRecord.flags);
+        if (!currentFlags && configRecord.requestModel === 'cursor') {
+            setFlagInput('cursor_compat=true');
+        } else {
+            setFlagInput(currentFlags);
+        }
         setFlagError(undefined);
         setFlagDialogOpen(true);
     }, [configRecord]);
