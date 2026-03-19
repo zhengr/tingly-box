@@ -228,6 +228,11 @@ func (s *Server) OpenAIChatCompletions(c *gin.Context) {
 		if cursorCompat {
 			ops.ApplyCursorCompatContentNormalization(&req.ChatCompletionNewParams)
 		}
+
+		// Align tool messages to ensure valid message sequence for OpenAI API compatibility
+		// This prevents "role 'tool' must be a response to preceding message with 'tool_calls'" errors
+		transform.AlignToolMessagesForOpenAI(&req.ChatCompletionNewParams)
+
 		anthropicReq := request.ConvertOpenAIToAnthropicRequest(&req.ChatCompletionNewParams, int64(maxAllowed))
 		if isStreaming {
 			wrapper := s.clientPool.GetAnthropicClient(provider, string(anthropicReq.Model))
@@ -335,7 +340,7 @@ func (s *Server) OpenAIChatCompletions(c *gin.Context) {
 		// Note: Base transform is not needed since the request is already in OpenAI Chat format
 		// Chain: Consistency Transform → Vendor Transform
 		chain := transform.NewTransformChain([]transform.Transform{
-			//transform.NewConsistencyTransform(transform.TargetAPIStyleOpenAIChat),
+			transform.NewConsistencyTransform(transform.TargetAPIStyleOpenAIChat),
 			transform.NewVendorTransform(provider.APIBase),
 		})
 
