@@ -4,12 +4,10 @@ import {
     Box,
     Button,
     CircularProgress,
-    FormControl,
     ListItemIcon,
     ListItemText,
     Menu,
     MenuItem,
-    Select,
     SelectChangeEvent,
     Tooltip,
     Typography,
@@ -30,7 +28,6 @@ interface PluginFeatureConfig {
 
 const PLUGIN_FEATURES: PluginFeatureConfig[] = [
     { key: 'smart_compact', label: 'Smart Compact', description: 'Remove thinking blocks from conversation history to reduce context' },
-    { key: 'recording', label: 'Recording (Legacy)', description: 'Record scenario-level request/response traffic for debugging (Legacy - use Record V2)' },
     { key: 'clean_header', label: 'Clean Header', description: 'Remove Claude Code billing header from system messages', scenarios: ['claude_code'] as const },
     { key: 'anthropic_beta', label: 'Beta', description: 'Enable Anthropic beta features (e.g. extended thinking)', scenarios: ['claude_code'] as const },
 ];
@@ -430,7 +427,7 @@ const PluginFeatures: React.FC<PluginFeaturesProps> = ({ scenario }) => {
                         );
                     })}
 
-                    {/* Record V2 Dropdown */}
+                    {/* Record V2 */}
                     {(() => {
                         const currentRecordMode = RECORD_V2_MODES.find(m => m.value === recordV2Mode);
                         const isRecordV2Enabled = recordV2Mode !== '';
@@ -441,56 +438,57 @@ const PluginFeatures: React.FC<PluginFeaturesProps> = ({ scenario }) => {
                                 placement="right"
                                 arrow
                             >
-                                <Box sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 1,
-                                    bgcolor: isRecordV2Enabled ? 'error.main' : 'transparent',
-                                    color: isRecordV2Enabled ? 'error.contrastText' : 'text.primary',
-                                    borderRadius: 1,
-                                    px: 1,
-                                    py: 0.5,
-                                    border: isRecordV2Enabled ? 'none' : '1px solid',
-                                    borderColor: 'divider',
-                                    opacity: isUpdatingRecordV2 ? 0.6 : 1,
-                                    '&:hover': {
-                                        bgcolor: isRecordV2Enabled ? 'error.dark' : 'action.selected',
-                                    },
-                                }}>
-                                    <FiberManualRecord sx={{ fontSize: '0.875rem' }} />
-                                    <Typography variant="caption" sx={{ fontWeight: isRecordV2Enabled ? 600 : 400, mr: 1 }}>
-                                        Record V2
-                                    </Typography>
-                                    <FormControl size="small" sx={{ minWidth: 90 }}>
-                                        <Select
-                                            value={recordV2Mode}
-                                            onChange={handleRecordV2Change}
-                                            variant="standard"
-                                            disabled={isUpdatingRecordV2}
-                                            disableUnderline
-                                            sx={{
-                                                color: 'inherit',
-                                                fontSize: '0.75rem',
-                                                '& .MuiSelect-select': {
-                                                    py: 0,
-                                                    pr: '20px !important',
-                                                },
-                                                '& .MuiSvgIcon-root': {
-                                                    color: 'inherit',
-                                                },
-                                            }}
-                                        >
-                                            {RECORD_V2_MODES.map((mode) => (
-                                                <MenuItem key={mode.value} value={mode.value} sx={{ fontSize: '0.875rem' }}>
-                                                    {mode.label}
-                                                </MenuItem>
-                                            ))}
-                                        </Select>
-                                    </FormControl>
-                                </Box>
+                                <Button
+                                    size="small"
+                                    variant="outlined"
+                                    onClick={(e) => !isUpdatingRecordV2 && handleMenuOpen('recordV2', e)}
+                                    disabled={isUpdatingRecordV2}
+                                    endIcon={<KeyboardArrowDown />}
+                                    sx={{
+                                        minWidth: 110,
+                                        textTransform: 'none',
+                                        bgcolor: isRecordV2Enabled ? 'primary.main' : 'transparent',
+                                        color: isRecordV2Enabled ? 'primary.contrastText' : 'text.primary',
+                                        fontWeight: isRecordV2Enabled ? 600 : 400,
+                                        border: isRecordV2Enabled ? 'none' : '1px solid',
+                                        borderColor: 'divider',
+                                        opacity: isUpdatingRecordV2 ? 0.6 : 1,
+                                        '&:hover': {
+                                            bgcolor: isRecordV2Enabled ? 'primary.dark' : 'action.selected',
+                                        },
+                                    }}
+                                >
+                                    <FiberManualRecord sx={{ fontSize: '0.875rem', mr: 0.5 }} />
+                                    Record: {currentRecordMode?.label || 'Off'}
+                                </Button>
                             </Tooltip>
                         );
                     })()}
+                    <Menu
+                        anchorEl={menuAnchor['recordV2']}
+                        open={Boolean(menuAnchor['recordV2'])}
+                        onClose={() => handleMenuClose('recordV2')}
+                        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+                    >
+                        {RECORD_V2_MODES.map((mode) => (
+                            <MenuItem
+                                key={mode.value}
+                                selected={mode.value === recordV2Mode}
+                                onClick={() => {
+                                    handleRecordV2Change({ target: { value: mode.value } } as SelectChangeEvent<string>);
+                                    handleMenuClose('recordV2');
+                                }}
+                            >
+                                <Tooltip title={mode.description} placement="right" arrow>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                                        <ListItemText>{mode.label}</ListItemText>
+                                        {mode.value === recordV2Mode && <CheckIcon />}
+                                    </Box>
+                                </Tooltip>
+                            </MenuItem>
+                        ))}
+                    </Menu>
                 </Box>
             </Box>
         </Box>
