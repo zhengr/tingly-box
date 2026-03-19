@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	anthropicstream "github.com/anthropics/anthropic-sdk-go/packages/ssestream"
@@ -21,39 +20,6 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
-// cleanSystemMessages removes billing header messages from system blocks
-// This is used for Claude Code scenario to filter out injected billing headers
-func cleanSystemMessages(blocks []anthropic.TextBlockParam) []anthropic.TextBlockParam {
-	if len(blocks) == 0 {
-		return blocks
-	}
-	result := make([]anthropic.TextBlockParam, 0, len(blocks))
-	for _, block := range blocks {
-		// Skip billing header messages
-		if strings.HasPrefix(strings.TrimSpace(block.Text), "x-anthropic-billing-header:") {
-			continue
-		}
-		result = append(result, block)
-	}
-	return result
-}
-
-// cleanBetaSystemMessages removes billing header messages from beta system blocks
-func cleanBetaSystemMessages(blocks []anthropic.BetaTextBlockParam) []anthropic.BetaTextBlockParam {
-	if len(blocks) == 0 {
-		return blocks
-	}
-	result := make([]anthropic.BetaTextBlockParam, 0, len(blocks))
-	for _, block := range blocks {
-		// Skip billing header messages
-		if strings.HasPrefix(strings.TrimSpace(block.Text), "x-anthropic-billing-header:") {
-			continue
-		}
-		result = append(result, block)
-	}
-	return result
-}
-
 // anthropicMessagesV1 implements standard v1 messages API
 func (s *Server) anthropicMessagesV1(c *gin.Context, req protocol.AnthropicMessagesRequest, proxyModel string, provider *typ.Provider, actualModel string, rule *typ.Rule) {
 
@@ -61,6 +27,13 @@ func (s *Server) anthropicMessagesV1(c *gin.Context, req protocol.AnthropicMessa
 	var recorder *ScenarioRecorder
 	if r, exists := c.Get("scenario_recorder"); exists {
 		recorder = r.(*ScenarioRecorder)
+	}
+
+	// Get or create recorder for dual-stage recording (when V2 flag is enabled)
+	var protocolRecorder *ProtocolRecorder
+	if s.enableRecording {
+		scenarioType := rule.GetScenario()
+		protocolRecorder = s.GetOrCreateScenarioRecorderV2(c, string(scenarioType))
 	}
 
 	// Check if streaming is requested
@@ -117,6 +90,8 @@ func (s *Server) anthropicMessagesV1(c *gin.Context, req protocol.AnthropicMessa
 				if req.Thinking.OfEnabled != nil {
 					req.Thinking = anthropic.ThinkingConfigParamOfEnabled(budgetTokens)
 				}
+			default:
+				req.Thinking = anthropic.ThinkingConfigParamUnion{OfDisabled: &anthropic.ThinkingConfigDisabledParam{}}
 			}
 		}
 	}
@@ -175,7 +150,6 @@ func (s *Server) anthropicMessagesV1(c *gin.Context, req protocol.AnthropicMessa
 				}
 				return
 			}
-
 			// Handle the streaming response
 			s.handleAnthropicStreamResponseV1(c, req.MessageNewParams, streamResp, proxyModel, actualModel, provider, recorder)
 		} else {
@@ -325,13 +299,15 @@ func (s *Server) anthropicMessagesV1(c *gin.Context, req protocol.AnthropicMessa
 
 			logrus.Debugf("[AnthropicV1] Using Transform Chain for Responses API for model=%s", actualModel)
 
-			// Use Transform Chain for request transformation
-			// Chain: Base Transform → Consistency Transform → Vendor Transform
-			chain := transform.NewTransformChain([]transform.Transform{
-				transform.NewBaseTransform(transform.TargetAPIStyleOpenAIResponses),
-				//transform.NewConsistencyTransform(transform.TargetAPIStyleOpenAIResponses),
-				transform.NewVendorTransform(provider.APIBase),
-			})
+			// Build transform chain with recording support
+			chain, err := s.BuildTransformChain(c, transform.TargetAPIStyleOpenAIResponses, provider.APIBase, nil, isStreaming, protocolRecorder)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				if recorder != nil {
+					recorder.RecordError(err)
+				}
+				return
+			}
 
 			// Create transform context
 			var scenarioFlags *typ.ScenarioFlags
@@ -354,13 +330,22 @@ func (s *Server) anthropicMessagesV1(c *gin.Context, req protocol.AnthropicMessa
 				if recorder != nil {
 					recorder.RecordError(err)
 				}
+				if protocolRecorder != nil {
+					protocolRecorder.SetTransformSteps(finalCtx.TransformSteps)
+					protocolRecorder.RecordError(err, provider, actualModel, s.recordMode)
+				}
 				return
+			}
+
+			// Store transform steps in V2 recorder
+			if protocolRecorder != nil {
+				protocolRecorder.SetTransformSteps(finalCtx.TransformSteps)
 			}
 
 			// Get final transformed request
 			transformedReq := finalCtx.Request.(*responses.ResponseNewParams)
 
-			if isStreaming || provider.APIBase == protocol.CodexAPIBase {
+			if isStreaming {
 				req.Stream = true
 				s.handleAnthropicV1ViaResponsesAPIStreaming(c, req, proxyModel, actualModel, provider, *transformedReq)
 			} else {
@@ -369,13 +354,15 @@ func (s *Server) anthropicMessagesV1(c *gin.Context, req protocol.AnthropicMessa
 			return
 		}
 
-		// Use Transform Chain for request transformation
-		// Chain: Base Transform → Consistency Transform → Vendor Transform
-		chain := transform.NewTransformChain([]transform.Transform{
-			transform.NewBaseTransform(transform.TargetAPIStyleOpenAIChat),
-			//transform.NewConsistencyTransform(transform.TargetAPIStyleOpenAIChat),
-			transform.NewVendorTransform(provider.APIBase),
-		})
+		// Build transform chain with recording support
+		chain, err := s.BuildTransformChain(c, transform.TargetAPIStyleOpenAIChat, provider.APIBase, nil, isStreaming, protocolRecorder)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			if recorder != nil {
+				recorder.RecordError(err)
+			}
+			return
+		}
 
 		// Create transform context
 		var scenarioFlags *typ.ScenarioFlags
@@ -398,7 +385,16 @@ func (s *Server) anthropicMessagesV1(c *gin.Context, req protocol.AnthropicMessa
 			if recorder != nil {
 				recorder.RecordError(err)
 			}
+			if protocolRecorder != nil {
+				protocolRecorder.SetTransformSteps(finalCtx.TransformSteps)
+				protocolRecorder.RecordError(err, provider, actualModel, s.recordMode)
+			}
 			return
+		}
+
+		// Store transform steps in V2 recorder
+		if protocolRecorder != nil {
+			protocolRecorder.SetTransformSteps(finalCtx.TransformSteps)
 		}
 
 		// Get final transformed request
