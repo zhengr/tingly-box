@@ -42,7 +42,6 @@ func (s *Server) anthropicMessagesV1Beta(c *gin.Context, req protocol.AnthropicB
 	shouldIntercept, shouldStripTools, _ := s.resolveToolInterceptor(provider, hasBuiltInWebSearch)
 
 	// Get scenario config for flags
-	scenarioType := rule.GetScenario()
 	cleanHeader := false
 	if scenarioConfig := s.config.GetScenarioConfig(scenarioType); scenarioConfig != nil {
 		cleanHeader = scenarioConfig.Flags.CleanHeader
@@ -412,7 +411,7 @@ func (s *Server) anthropicMessagesV1Beta(c *gin.Context, req protocol.AnthropicB
 }
 
 // handleAnthropicStreamResponseV1Beta processes the Anthropic beta streaming response and sends it to the client
-func (s *Server) handleAnthropicStreamResponseV1Beta(c *gin.Context, req anthropic.BetaMessageNewParams, streamResp *anthropicstream.Stream[anthropic.BetaRawMessageStreamEventUnion], respModel, actualModel string, provider *typ.Provider, recorder *ScenarioRecorder) {
+func (s *Server) handleAnthropicStreamResponseV1Beta(c *gin.Context, req anthropic.BetaMessageNewParams, streamResp *anthropicstream.Stream[anthropic.BetaRawMessageStreamEventUnion], respModel, actualModel string, provider *typ.Provider, recorder *ProtocolRecorder) {
 	hc := protocol.NewHandleContext(c, respModel)
 
 	// Add recorder hooks if recorder is available
@@ -485,9 +484,9 @@ func (s *Server) handleAnthropicV1BetaViaResponsesAPINonStreaming(c *gin.Context
 // handleAnthropicV1BetaViaResponsesAPIStreaming handles streaming Responses API request
 func (s *Server) handleAnthropicV1BetaViaResponsesAPIStreaming(c *gin.Context, req protocol.AnthropicBetaMessagesRequest, proxyModel string, actualModel string, provider *typ.Provider, responsesReq responses.ResponseNewParams) {
 	// Get scenario recorder and set up stream recorder
-	var recorder *ScenarioRecorder
+	var recorder *ProtocolRecorder
 	if r, exists := c.Get("scenario_recorder"); exists {
-		recorder = r.(*ScenarioRecorder)
+		recorder = r.(*ProtocolRecorder)
 	}
 	streamRec := newStreamRecorder(recorder)
 	if streamRec != nil {
@@ -538,9 +537,9 @@ func (s *Server) handleAnthropicV1BetaViaResponsesAPIStreaming(c *gin.Context, r
 // handleAnthropicV1BetaViaResponsesAPIStreaming handles streaming Responses API request
 func (s *Server) handleAnthropicV1BetaViaResponsesAPIAssembly(c *gin.Context, req protocol.AnthropicBetaMessagesRequest, proxyModel string, actualModel string, provider *typ.Provider, responsesReq responses.ResponseNewParams) {
 	// Get scenario recorder and set up stream recorder
-	var recorder *ScenarioRecorder
+	var recorder *ProtocolRecorder
 	if r, exists := c.Get("scenario_recorder"); exists {
-		recorder = r.(*ScenarioRecorder)
+		recorder = r.(*ProtocolRecorder)
 	}
 	streamRec := newStreamRecorder(recorder)
 	if streamRec != nil {

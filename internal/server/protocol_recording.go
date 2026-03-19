@@ -185,10 +185,6 @@ func getErrorMessage(err error) string {
 
 // GetOrCreateScenarioRecorderV2 gets or creates a V2 scenario recorder for the given scenario
 func (s *Server) GetOrCreateScenarioRecorderV2(c *gin.Context, scenario string, provider *typ.Provider, model string, mode obs.RecordMode) *ProtocolRecorder {
-	if !s.enableRecording {
-		return nil
-	}
-
 	// Use the existing scenario recorder if available
 	if r, exists := c.Get("scenario_recorder"); exists {
 		if rec, ok := r.(*ScenarioRecorder); ok {
