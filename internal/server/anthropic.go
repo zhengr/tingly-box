@@ -102,7 +102,7 @@ func (s *Server) AnthropicMessages(c *gin.Context) {
 			return
 		}
 		model = string(betaMessages.Model)
-		reqParams = &betaMessages.BetaMessageNewParams
+		reqParams = betaMessages.BetaMessageNewParams
 
 	} else {
 		if err := json.Unmarshal(bodyBytes, &messages); err != nil {
@@ -120,7 +120,7 @@ func (s *Server) AnthropicMessages(c *gin.Context) {
 		}
 
 		model = string(messages.Model)
-		reqParams = &messages.MessageNewParams
+		reqParams = messages.MessageNewParams
 	}
 
 	// Check if this is the request model name first
@@ -164,20 +164,20 @@ func (s *Server) AnthropicMessages(c *gin.Context) {
 		// Apply compact transformation only if the compact feature is enabled for this scenario
 		if s.ApplySmartCompact(scenarioType) {
 			tf := smart_compact.NewCompactTransformer(2)
-			tf.HandleV1Beta(&betaMessages.BetaMessageNewParams)
+			tf.HandleV1Beta(betaMessages.BetaMessageNewParams)
 			logrus.Infoln("smart compact triggered")
 		}
-		s.anthropicMessagesV1Beta(c, betaMessages, model, provider, selectedService.Model, rule)
+		s.anthropicMessagesV1Beta(c, &betaMessages, model, provider, selectedService.Model, rule)
 
 	} else {
 
 		// Apply compact transformation only if the compact feature is enabled for this scenario
 		if s.ApplySmartCompact(scenarioType) {
 			tf := smart_compact.NewCompactTransformer(2)
-			tf.HandleV1(&messages.MessageNewParams)
+			tf.HandleV1(messages.MessageNewParams)
 			logrus.Infoln("smart compact triggered")
 		}
-		s.anthropicMessagesV1(c, messages, model, provider, selectedService.Model, rule)
+		s.anthropicMessagesV1(c, &messages, model, provider, selectedService.Model, rule)
 	}
 }
 

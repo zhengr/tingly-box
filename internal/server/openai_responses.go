@@ -207,13 +207,13 @@ func (s *Server) ResponsesCreate(c *gin.Context) {
 
 	// Handle streaming or non-streaming
 	if req.Stream {
-		s.handleResponsesStreamingRequest(c, provider, *transformedParams, req.Model, actualModel)
+		s.handleResponsesStreamingRequest(c, provider, transformedParams, req.Model, actualModel)
 	} else {
-		s.handleResponsesNonStreamingRequest(c, provider, *transformedParams, req.Model, actualModel)
+		s.handleResponsesNonStreamingRequest(c, provider, transformedParams, req.Model, actualModel)
 	}
 }
 
-func (s *Server) handleCodexResponsesFallback(c *gin.Context, provider *typ.Provider, params responses.ResponseNewParams, responseModel, actualModel string, maxAllowed int, isStreaming bool) {
+func (s *Server) handleCodexResponsesFallback(c *gin.Context, provider *typ.Provider, params *responses.ResponseNewParams, responseModel, actualModel string, maxAllowed int, isStreaming bool) {
 	switch provider.APIStyle {
 	case protocol.APIStyleOpenAI:
 		chatReq := request.ConvertOpenAIResponsesToChat(params, int64(maxAllowed))
@@ -394,7 +394,7 @@ func buildResponsesPayloadFromAnthropic(resp *anthropic.Message, responseModel, 
 }
 
 // handleResponsesNonStreamingRequest handles non-streaming Responses API requests
-func (s *Server) handleResponsesNonStreamingRequest(c *gin.Context, provider *typ.Provider, params responses.ResponseNewParams, responseModel, actualModel string) {
+func (s *Server) handleResponsesNonStreamingRequest(c *gin.Context, provider *typ.Provider, params *responses.ResponseNewParams, responseModel, actualModel string) {
 	// Forward request to provider
 	var response *responses.Response
 	var err error
@@ -402,7 +402,7 @@ func (s *Server) handleResponsesNonStreamingRequest(c *gin.Context, provider *ty
 
 	wrapper := s.clientPool.GetOpenAIClient(provider, string(params.Model))
 	fc := NewForwardContext(nil, provider)
-	response, cancel, err = ForwardOpenAIResponses(fc, wrapper, params)
+	response, cancel, err = ForwardOpenAIResponses(fc, wrapper, *params)
 	if cancel != nil {
 		defer cancel()
 	}
@@ -444,11 +444,11 @@ func (s *Server) handleResponsesNonStreamingRequest(c *gin.Context, provider *ty
 }
 
 // handleResponsesStreamingRequest handles streaming Responses API requests
-func (s *Server) handleResponsesStreamingRequest(c *gin.Context, provider *typ.Provider, params responses.ResponseNewParams, responseModel, actualModel string) {
+func (s *Server) handleResponsesStreamingRequest(c *gin.Context, provider *typ.Provider, params *responses.ResponseNewParams, responseModel, actualModel string) {
 	// Create streaming request with request context for proper cancellation
 	wrapper := s.clientPool.GetOpenAIClient(provider, params.Model)
 	fc := NewForwardContext(c.Request.Context(), provider)
-	stream, cancel, err := ForwardOpenAIResponsesStream(fc, wrapper, params)
+	stream, cancel, err := ForwardOpenAIResponsesStream(fc, wrapper, *params)
 	if cancel != nil {
 		defer cancel()
 	}
@@ -647,16 +647,16 @@ func SSEventOpenAI(c *gin.Context, t string, data any, modelOverride ...string) 
 
 // convertToResponsesParams converts raw JSON to OpenAI SDK params format
 // This handles the model override and forwards the rest as-is
-func (s *Server) convertToResponsesParams(bodyBytes []byte, actualModel string) (responses.ResponseNewParams, error) {
+func (s *Server) convertToResponsesParams(bodyBytes []byte, actualModel string) (*responses.ResponseNewParams, error) {
 	// Preprocess to add type fields to input items (needed for union deserialization)
 	processedData, err := protocol.AddTypeFieldToInputItems(bodyBytes)
 	if err != nil {
-		return responses.ResponseNewParams{}, err
+		return nil, err
 	}
 
 	var raw map[string]any
 	if err := json.Unmarshal(processedData, &raw); err != nil {
-		return responses.ResponseNewParams{}, err
+		return nil, err
 	}
 
 	// Override the model
@@ -665,15 +665,15 @@ func (s *Server) convertToResponsesParams(bodyBytes []byte, actualModel string) 
 	// Marshal back to JSON and unmarshal into ResponseNewParams
 	modifiedJSON, err := json.Marshal(raw)
 	if err != nil {
-		return responses.ResponseNewParams{}, err
+		return nil, err
 	}
 
 	var params responses.ResponseNewParams
 	if err := json.Unmarshal(modifiedJSON, &params); err != nil {
-		return responses.ResponseNewParams{}, err
+		return nil, err
 	}
 
-	return params, nil
+	return &params, nil
 }
 
 // ResponsesGet handles GET /v1/responses/{id}

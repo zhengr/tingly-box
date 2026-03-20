@@ -14,7 +14,7 @@ import (
 
 // OpenAIChatCompletionRequest is a type alias for OpenAI chat completion request with extra fields.
 type OpenAIChatCompletionRequest struct {
-	openai.ChatCompletionNewParams
+	*openai.ChatCompletionNewParams
 	// an extra model field for any preprocess logic like middleware
 	Model  string `json:"model"`
 	Stream bool   `json:"stream"`
@@ -31,7 +31,7 @@ func (r *OpenAIChatCompletionRequest) UnmarshalJSON(data []byte) error {
 	}
 	r.Stream = aux.Stream
 	r.Model = aux.Model
-	r.ChatCompletionNewParams = inner
+	r.ChatCompletionNewParams = &inner
 	return nil
 }
 
@@ -48,7 +48,7 @@ func (r *OpenAIChatCompletionRequest) UnmarshalJSON(data []byte) error {
 // for proxy-specific handling like the `stream` parameter.
 type ResponseCreateRequest struct {
 	// Embed the native SDK type for all other fields
-	responses.ResponseNewParams
+	*responses.ResponseNewParams
 
 	// Stream indicates whether to stream the response
 	// This is not part of ResponseNewParams as streaming is controlled
@@ -83,7 +83,7 @@ func (r *ResponseCreateRequest) UnmarshalJSON(data []byte) error {
 
 	r.Stream = aux.Stream
 	r.Model = aux.Model
-	r.ResponseNewParams = inner
+	r.ResponseNewParams = &inner
 	return nil
 }
 

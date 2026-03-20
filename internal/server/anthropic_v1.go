@@ -21,7 +21,7 @@ import (
 )
 
 // anthropicMessagesV1 implements standard v1 messages API
-func (s *Server) anthropicMessagesV1(c *gin.Context, req protocol.AnthropicMessagesRequest, proxyModel string, provider *typ.Provider, actualModel string, rule *typ.Rule) {
+func (s *Server) anthropicMessagesV1(c *gin.Context, req *protocol.AnthropicMessagesRequest, proxyModel string, provider *typ.Provider, actualModel string, rule *typ.Rule) {
 	// Get or create recorder for dual-stage recording (when V2 flag is enabled)
 	var recorder *ProtocolRecorder
 	scenarioType := rule.GetScenario()
@@ -30,7 +30,10 @@ func (s *Server) anthropicMessagesV1(c *gin.Context, req protocol.AnthropicMessa
 	// Check if streaming is requested
 	isStreaming := req.Stream
 
-	req.Model = anthropic.Model(actualModel)
+	req.Model = actualModel
+
+	// Also update the embedded SDK model field
+	req.MessageNewParams.Model = anthropic.Model(actualModel)
 
 	// Set tracking context with all metadata (eliminates need for explicit parameter passing)
 	SetTrackingContext(c, rule, provider, actualModel, proxyModel, isStreaming)
@@ -112,8 +115,8 @@ func (s *Server) anthropicMessagesV1(c *gin.Context, req protocol.AnthropicMessa
 
 	// === PRE-REQUEST INTERCEPTION: Strip tools before sending to provider ===
 	if shouldIntercept {
-		preparedReq, _ := s.toolInterceptor.PrepareAnthropicRequest(provider, &req.MessageNewParams)
-		req.MessageNewParams = *preparedReq
+		preparedReq, _ := s.toolInterceptor.PrepareAnthropicRequest(provider, req.MessageNewParams)
+		req.MessageNewParams = preparedReq
 	} else if shouldStripTools {
 		req.MessageNewParams.Tools = toolinterceptor.StripSearchFetchToolsAnthropic(req.MessageNewParams.Tools)
 	}
@@ -189,7 +192,7 @@ func (s *Server) anthropicMessagesV1(c *gin.Context, req protocol.AnthropicMessa
 
 	case protocol.APIStyleGoogle:
 		// Convert Anthropic request to Google format
-		model, googleReq, cfg := request.ConvertAnthropicToGoogleRequest(&req.MessageNewParams, 0)
+		model, googleReq, cfg := request.ConvertAnthropicToGoogleRequest(req.MessageNewParams, 0)
 
 		if isStreaming {
 			// Create streaming request with request context for proper cancellation
@@ -306,8 +309,8 @@ func (s *Server) anthropicMessagesV1(c *gin.Context, req protocol.AnthropicMessa
 			}
 
 			transformCtx := &transform.TransformContext{
-				OriginalRequest: &req.MessageNewParams,
-				Request:         &req.MessageNewParams, // Original Anthropic v1 request
+				OriginalRequest: req.MessageNewParams,
+				Request:         req.MessageNewParams, // Original Anthropic v1 request
 				ProviderURL:     provider.APIBase,
 				ScenarioFlags:   scenarioFlags,
 				IsStreaming:     isStreaming,
@@ -337,9 +340,9 @@ func (s *Server) anthropicMessagesV1(c *gin.Context, req protocol.AnthropicMessa
 
 			if isStreaming {
 				req.Stream = true
-				s.handleAnthropicV1ViaResponsesAPIStreaming(c, req, proxyModel, actualModel, provider, *transformedReq)
+				s.handleAnthropicV1ViaResponsesAPIStreaming(c, req, proxyModel, actualModel, provider, transformedReq)
 			} else {
-				s.handleAnthropicV1ViaResponsesAPINonStreaming(c, req, proxyModel, actualModel, provider, *transformedReq)
+				s.handleAnthropicV1ViaResponsesAPINonStreaming(c, req, proxyModel, actualModel, provider, transformedReq)
 			}
 			return
 		}
@@ -472,7 +475,7 @@ func (s *Server) anthropicMessagesV1(c *gin.Context, req protocol.AnthropicMessa
 }
 
 // handleAnthropicStreamResponseV1 processes the Anthropic streaming response and sends it to the client (v1)
-func (s *Server) handleAnthropicStreamResponseV1(c *gin.Context, req anthropic.MessageNewParams, streamResp *anthropicstream.Stream[anthropic.MessageStreamEventUnion], respModel, actualModel string, provider *typ.Provider, recorder *ProtocolRecorder) {
+func (s *Server) handleAnthropicStreamResponseV1(c *gin.Context, req *anthropic.MessageNewParams, streamResp *anthropicstream.Stream[anthropic.MessageStreamEventUnion], respModel, actualModel string, provider *typ.Provider, recorder *ProtocolRecorder) {
 	hc := protocol.NewHandleContext(c, respModel)
 
 	// Add recorder hooks if recorder is available
@@ -489,13 +492,13 @@ func (s *Server) handleAnthropicStreamResponseV1(c *gin.Context, req anthropic.M
 		}
 	}
 
-	usageStat, err := stream.HandleAnthropicV1Stream(hc, req, streamResp)
+	usageStat, err := stream.HandleAnthropicV1Stream(hc, *req, streamResp)
 	s.trackUsageWithTokenUsage(c, usageStat, err)
 }
 
 // handleAnthropicV1ViaResponsesAPINonStreaming handles non-streaming Responses API request for v1
 // This converts Anthropic v1 request directly to Responses API format, calls the API, and converts back to v1
-func (s *Server) handleAnthropicV1ViaResponsesAPINonStreaming(c *gin.Context, req protocol.AnthropicMessagesRequest, proxyModel string, actualModel string, provider *typ.Provider, responsesReq responses.ResponseNewParams) {
+func (s *Server) handleAnthropicV1ViaResponsesAPINonStreaming(c *gin.Context, req *protocol.AnthropicMessagesRequest, proxyModel string, actualModel string, provider *typ.Provider, responsesReq *responses.ResponseNewParams) {
 	// Get scenario recorder if exists
 	var recorder *ScenarioRecorder
 	if r, exists := c.Get("scenario_recorder"); exists {
@@ -510,7 +513,7 @@ func (s *Server) handleAnthropicV1ViaResponsesAPINonStreaming(c *gin.Context, re
 	wrapper := s.clientPool.GetOpenAIClient(provider, responsesReq.Model)
 	fc := NewForwardContext(nil, provider)
 
-	response, cancel, err = ForwardOpenAIResponses(fc, wrapper, responsesReq)
+	response, cancel, err = ForwardOpenAIResponses(fc, wrapper, *responsesReq)
 	if cancel != nil {
 		defer cancel()
 	}
@@ -554,7 +557,7 @@ func (s *Server) handleAnthropicV1ViaResponsesAPINonStreaming(c *gin.Context, re
 
 // handleAnthropicV1ViaResponsesAPIStreaming handles streaming Responses API request for v1
 // This converts Anthropic v1 request directly to Responses API format, calls the API, and streams back in v1 format
-func (s *Server) handleAnthropicV1ViaResponsesAPIStreaming(c *gin.Context, req protocol.AnthropicMessagesRequest, proxyModel string, actualModel string, provider *typ.Provider, responsesReq responses.ResponseNewParams) {
+func (s *Server) handleAnthropicV1ViaResponsesAPIStreaming(c *gin.Context, req *protocol.AnthropicMessagesRequest, proxyModel string, actualModel string, provider *typ.Provider, responsesReq *responses.ResponseNewParams) {
 	// Get scenario recorder and set up stream recorder
 	var recorder *ProtocolRecorder
 	if r, exists := c.Get("scenario_recorder"); exists {
@@ -568,7 +571,7 @@ func (s *Server) handleAnthropicV1ViaResponsesAPIStreaming(c *gin.Context, req p
 	// For standard OpenAI providers, use the OpenAI SDK
 	wrapper := s.clientPool.GetOpenAIClient(provider, responsesReq.Model)
 	fc := NewForwardContext(c.Request.Context(), provider)
-	streamResp, cancel, err := ForwardOpenAIResponsesStream(fc, wrapper, responsesReq)
+	streamResp, cancel, err := ForwardOpenAIResponsesStream(fc, wrapper, *responsesReq)
 	if cancel != nil {
 		defer cancel()
 	}

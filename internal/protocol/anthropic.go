@@ -10,7 +10,7 @@ type (
 	// AnthropicMessagesRequest Request
 	AnthropicMessagesRequest struct {
 		// Use official Anthropic SDK types directly
-		anthropic.MessageNewParams
+		*anthropic.MessageNewParams
 
 		Stream bool `json:"stream"`
 
@@ -20,7 +20,7 @@ type (
 	// AnthropicBetaMessagesRequest Request with beta
 	AnthropicBetaMessagesRequest struct {
 		// Use official Anthropic SDK types directly
-		anthropic.BetaMessageNewParams
+		*anthropic.BetaMessageNewParams
 
 		Stream bool `json:"stream"`
 
@@ -40,7 +40,7 @@ func (r *AnthropicBetaMessagesRequest) UnmarshalJSON(data []byte) error {
 	}
 	r.Stream = aux.Stream
 	r.Model = aux.Model
-	r.BetaMessageNewParams = inner
+	r.BetaMessageNewParams = &inner
 	return nil
 }
 
@@ -55,6 +55,6 @@ func (r *AnthropicMessagesRequest) UnmarshalJSON(data []byte) error {
 	}
 	r.Stream = aux.Stream
 	r.Model = aux.Model
-	r.MessageNewParams = inner
+	r.MessageNewParams = &inner
 	return nil
 }
