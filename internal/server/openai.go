@@ -336,6 +336,12 @@ func (s *Server) OpenAIChatCompletions(c *gin.Context) {
 			return
 		}
 
+		// Cap max_tokens at the model's maximum to prevent API errors
+		// This is critical for providers like DeepSeek which have strict max_tokens limits
+		if req.MaxTokens.Valid() && req.MaxTokens.Value > int64(maxAllowed) {
+			req.MaxTokens.Value = int64(maxAllowed)
+		}
+
 		// Use Transform Chain for request transformation (Consistency + Vendor transforms)
 		// Note: Base transform is not needed since the request is already in OpenAI Chat format
 		// Chain: Consistency Transform → Vendor Transform
