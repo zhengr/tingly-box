@@ -5,6 +5,7 @@ import (
 
 	"github.com/openai/openai-go/v3"
 	"github.com/tingly-dev/tingly-box/internal/protocol"
+	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
 // ProviderTransform applies provider-specific transformations to OpenAI requests
@@ -118,4 +119,42 @@ func ApplyProviderTransforms(req *openai.ChatCompletionNewParams, providerURL, m
 	}
 	// Default: apply standard OpenAI-compatible transformations
 	return applyDefaultTransform(req, config)
+}
+
+// ApplyMaxTokensLimit applies max_tokens limit based on provider template configuration
+// This is a generic solution that works for all providers with model_limits configured
+func ApplyMaxTokensLimit(req *openai.ChatCompletionNewParams, provider interface{}, model string, templateManager interface{}) *openai.ChatCompletionNewParams {
+	// Skip if max_tokens is not set or is invalid
+	if !req.MaxTokens.Valid() || req.MaxTokens.Value <= 0 {
+		return req
+	}
+
+	// Type-safe interface for template manager (avoid circular dependency)
+	type MaxTokensGetter interface {
+		GetMaxTokensForModelByProvider(*typ.Provider, string) int
+	}
+
+	tm, ok := templateManager.(MaxTokensGetter)
+	if !ok {
+		return req
+	}
+
+	// Extract provider
+	var p *typ.Provider
+	if provider != nil {
+		p = provider.(*typ.Provider)
+	}
+	if p == nil {
+		return req
+	}
+
+	// Get max_tokens limit from template
+	maxAllowed := tm.GetMaxTokensForModelByProvider(p, model)
+
+	// Apply limit if the requested value exceeds the configured maximum
+	if req.MaxTokens.Value > int64(maxAllowed) {
+		req.MaxTokens.Value = int64(maxAllowed)
+	}
+
+	return req
 }

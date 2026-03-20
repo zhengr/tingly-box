@@ -336,6 +336,11 @@ func (s *Server) OpenAIChatCompletions(c *gin.Context) {
 			ProviderURL:     provider.APIBase,
 			ScenarioFlags:   scenarioFlags,
 			IsStreaming:     isStreaming,
+			Extra: map[string]interface{}{
+				"provider":        provider,
+				"templateManager": s.templateManager,
+				"actualModel":     actualModel,
+			},
 		}
 
 		// Execute transform chain

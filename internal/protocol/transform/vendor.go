@@ -61,6 +61,19 @@ func (t *VendorTransform) applyChatCompletionVendor(ctx *TransformContext, req *
 		config = &protocol.OpenAIConfig{} // Use default config if not available
 	}
 
+	// Extract provider and templateManager for max_tokens limiting
+	var provider interface{}
+	var templateManager interface{}
+	if p, ok := ctx.Extra["provider"]; ok {
+		provider = p
+	}
+	if tm, ok := ctx.Extra["templateManager"]; ok {
+		templateManager = tm
+	}
+
+	// Apply max_tokens limit based on provider template configuration
+	req = ops.ApplyMaxTokensLimit(req, provider, model, templateManager)
+
 	// Apply vendor-specific transforms using existing transformer package
 	transformed := ops.ApplyProviderTransforms(req, t.ProviderURL, model, config)
 
