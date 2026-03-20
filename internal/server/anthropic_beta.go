@@ -127,7 +127,7 @@ func (s *Server) anthropicMessagesV1Beta(c *gin.Context, req protocol.AnthropicB
 		wrapper := s.clientPool.GetAnthropicClient(provider, string(req.BetaMessageNewParams.Model))
 		fc := NewForwardContext(c.Request.Context(), provider)
 
-		finalCtx, err := s.transformAnthropicBeta(c, req, transform.TargetAPIStyleAnthropicBeta, provider, isStreaming, recorder, scenarioType, actualModel)
+		finalCtx, err := s.transformAnthropicBeta(c, req, transform.TargetAPIStyleAnthropicBeta, provider, isStreaming, recorder, scenarioType)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			if recorder != nil {
@@ -282,7 +282,7 @@ func (s *Server) anthropicMessagesV1Beta(c *gin.Context, req protocol.AnthropicB
 
 			logrus.Debugf("[Anthropic Beta] Using Transform Chain for Responses API for model=%s", actualModel)
 
-			finalCtx, err := s.transformAnthropicBeta(c, req, transform.TargetAPIStyleOpenAIResponses, provider, isStreaming, recorder, scenarioType, actualModel)
+			finalCtx, err := s.transformAnthropicBeta(c, req, transform.TargetAPIStyleOpenAIResponses, provider, isStreaming, recorder, scenarioType)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				if recorder != nil {
@@ -316,7 +316,7 @@ func (s *Server) anthropicMessagesV1Beta(c *gin.Context, req protocol.AnthropicB
 		c.Set("provider", provider.UUID)
 		c.Set("model", actualModel)
 
-		finalCtx, err := s.transformAnthropicBeta(c, req, transform.TargetAPIStyleOpenAIChat, provider, isStreaming, recorder, scenarioType, actualModel)
+		finalCtx, err := s.transformAnthropicBeta(c, req, transform.TargetAPIStyleOpenAIChat, provider, isStreaming, recorder, scenarioType)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			if recorder != nil {
