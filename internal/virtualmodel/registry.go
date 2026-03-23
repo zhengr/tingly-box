@@ -214,6 +214,14 @@ func (r *Registry) registerCompactModels() {
 			DelegateModel: "",
 			Transformer:   smart_compact.NewRoundFilesTransformer(),
 		},
+		{
+			ID:            "claude-code-compact",
+			Name:          "Claude Code Compact",
+			Description:   "Conditional compression: only activates when last user message contains '<command>compact</command>' with tools defined. Compresses historical rounds into XML format: <conversation><user>...</user><assistant>...</assistant><tool_calls><file>...</file></tool_calls>...</conversation>. Current round is preserved unchanged.",
+			Type:          VirtualModelTypeProxy,
+			DelegateModel: "",
+			Transformer:   smart_compact.NewClaudeCodeCompactTransformer(),
+		},
 	}
 
 	for _, cfg := range compactModels {
