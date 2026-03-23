@@ -3,7 +3,7 @@ import { ContentCopy, Error as ErrorIcon, GitHub, AppRegistration as NPM, Refres
 import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, Paper, Stack, Typography } from '@mui/material';
 import CssBaseline from '@mui/material/CssBaseline';
 import { ThemeProvider } from '@mui/material/styles';
-import { lazy, Suspense, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -14,63 +14,42 @@ import { useVersion, VersionProvider } from './contexts/VersionContext';
 import Layout from './layout/Layout';
 import theme from './theme';
 
-// Lazy load pages for code splitting
-const Login = lazy(() => import('./pages/Login'));
-const Guiding = lazy(() => import('./pages/./Guiding'));
-const UseOpenAIPage = lazy(() => import('./pages/scenario/UseOpenAIPage'));
-const UseAnthropicPage = lazy(() => import('./pages/scenario/UseAnthropicPage'));
-const UseCodexPage = lazy(() => import('./pages/scenario/UseCodexPage'));
-const UseClaudeCodePage = lazy(() => import('./pages/scenario/UseClaudeCodePage'));
-const UseAgentPage = lazy(() => import('./pages/scenario/UseAgentPage'));
-const UseOpenCodePage = lazy(() => import('./pages/scenario/UseOpenCodePage'));
-const UseXcodePage = lazy(() => import('./pages/scenario/UseXcodePage'));
-const UseVSCodePage = lazy(() => import('./pages/scenario/UseVSCodePage'));
-const CredentialPage = lazy(() => import('./pages/CredentialPage'));
-const System = lazy(() => import('./pages/System'));
-const AccessControl = lazy(() => import('./pages/AccessControl'));
-const LogsPage = lazy(() => import('./pages/system/LogsPage'));
-const DashboardPage = lazy(() => import('./pages/./DashboardPage'));
-const OverviewPage = lazy(() => import('./pages/overview/OverviewPage'));
-const ModelTestPage = lazy(() => import('./pages/ModelTestPage'));
+import Login from './pages/Login';
+import Guiding from './pages/Guiding';
+import UseOpenAIPage from './pages/scenario/UseOpenAIPage';
+import UseAnthropicPage from './pages/scenario/UseAnthropicPage';
+import UseCodexPage from './pages/scenario/UseCodexPage';
+import UseClaudeCodePage from './pages/scenario/UseClaudeCodePage';
+import UseAgentPage from './pages/scenario/UseAgentPage';
+import UseOpenCodePage from './pages/scenario/UseOpenCodePage';
+import UseXcodePage from './pages/scenario/UseXcodePage';
+import UseVSCodePage from './pages/scenario/UseVSCodePage';
+import CredentialPage from './pages/CredentialPage';
+import System from './pages/System';
+import AccessControl from './pages/AccessControl';
+import LogsPage from './pages/system/LogsPage';
+import DashboardPage from './pages/DashboardPage';
+import OverviewPage from './pages/overview/OverviewPage';
+import ModelTestPage from './pages/ModelTestPage';
+import UserPage from './pages/prompt/UserPage';
+import SkillPage from './pages/prompt/SkillPage';
+import CommandPage from './pages/prompt/CommandPage';
+import RemoteCoderPage from './pages/remote-coder/RemoteCoderPage';
+import RemoteCoderSessionsPage from './pages/remote-coder/RemoteCoderSessionsPage';
+import BotPage from './pages/remote-control/BotPage';
+import AgentPage from './pages/remote-control/AgentPage';
+import RemoteControlOverviewPage from './pages/remote-control/OverviewPage';
+import TelegramPage from './pages/remote-control/TelegramPage';
+import FeishuPage from './pages/remote-control/FeishuPage';
+import LarkPage from './pages/remote-control/LarkPage';
+import DingTalkPage from './pages/remote-control/DingTalkPage';
+import WeixinPage from './pages/remote-control/WeixinPage';
+import WeComPage from './pages/remote-control/WeComPage';
+import QQPage from './pages/remote-control/QQPage';
+import DiscordPage from './pages/remote-control/DiscordPage';
+import SlackPage from './pages/remote-control/SlackPage';
 
-// Prompt pages
-const UserPage = lazy(() => import('./pages/prompt/UserPage'));
-const SkillPage = lazy(() => import('./pages/prompt/SkillPage'));
-const CommandPage = lazy(() => import('./pages/prompt/CommandPage'));
-
-// Remote Control page
-const RemoteCoderPage = lazy(() => import('./pages/remote-coder/RemoteCoderPage'));
-const RemoteCoderSessionsPage = lazy(() => import('./pages/remote-coder/RemoteCoderSessionsPage'));
-
-// Remote Control pages
-const BotPage = lazy(() => import('./pages/remote-control/BotPage'));
-const AgentPage = lazy(() => import('./pages/remote-control/AgentPage'));
-const RemoteControlOverviewPage = lazy(() => import('./pages/remote-control/OverviewPage'));
-
-// Platform-specific bot pages
-const TelegramPage = lazy(() => import('./pages/remote-control/TelegramPage'));
-const FeishuPage = lazy(() => import('./pages/remote-control/FeishuPage'));
-const LarkPage = lazy(() => import('./pages/remote-control/LarkPage'));
-const DingTalkPage = lazy(() => import('./pages/remote-control/DingTalkPage'));
-const WeixinPage = lazy(() => import('./pages/remote-control/WeixinPage'));
-const WeComPage = lazy(() => import('./pages/remote-control/WeComPage'));
-const QQPage = lazy(() => import('./pages/remote-control/QQPage'));
-const DiscordPage = lazy(() => import('./pages/remote-control/DiscordPage'));
-const SlackPage = lazy(() => import('./pages/remote-control/SlackPage'));
-
-// Loading fallback component
-const PageLoader = () => (
-    <Box
-        sx={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            height: '100vh',
-        }}
-    >
-        <CircularProgress />
-    </Box>
-);
+// Loading fallback component - kept for potential future use with async data
 
 // Dialogs component that uses the health and version contexts
 const AppDialogs = () => {
@@ -281,7 +260,6 @@ function AppContent() {
     }, [navigate]);
 
     return (
-        <Suspense fallback={<PageLoader />}>
             <Routes>
                 <Route path="/login" element={<Login />} />
                 {/* Protected routes with Layout */}
@@ -350,7 +328,6 @@ function AppContent() {
                     <Route path="*" element={<Navigate to="/dashboard/7d" replace />} />
                 </Route>
             </Routes>
-        </Suspense>
     )
 }
 
