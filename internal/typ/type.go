@@ -112,7 +112,8 @@ func IsValidRecordingMode(mode string) bool {
 	}
 }
 
-// ScenarioFlags represents configuration flags for a scenario
+// ScenarioFlags represents legacy scenario-level feature flags.
+// These are global per scenario and are not a replacement for rule-level flags.
 type ScenarioFlags struct {
 	Unified  bool `json:"unified" yaml:"unified"`   // Single configuration for all models
 	Separate bool `json:"separate" yaml:"separate"` // Separate configuration for each model
@@ -137,8 +138,9 @@ type ScenarioFlags struct {
 	CleanHeader bool `json:"clean_header,omitempty" yaml:"clean_header,omitempty"` // Remove billing header from system messages (Claude Code only)
 }
 
-// RuleFlags represents configuration flags for a specific rule.
-// These flags are applied at rule-match time and are independent of scenario flags.
+// RuleFlags represents per-rule feature flags.
+// For routing behavior that should vary by rule (for example cursor compatibility),
+// add flags here instead of ScenarioFlags.
 type RuleFlags struct {
 	// CursorCompat enables Cursor compatibility handling (rich content normalization, stream usage stripping, tool gating).
 	CursorCompat bool `json:"cursor_compat,omitempty" yaml:"cursor_compat,omitempty"`
