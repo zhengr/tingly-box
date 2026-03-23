@@ -1,5 +1,5 @@
-import type { SxProps, Theme } from '@mui/material';
-import { Box } from '@mui/material';
+import type {SxProps, Theme} from '@mui/material';
+import {Box} from '@mui/material';
 
 // Import SVG files as URLs
 import AnthropicSvg from '@lobehub/icons-static-svg/icons/anthropic.svg?url';
@@ -29,7 +29,7 @@ interface BrandIconProps {
 
 // Box 作为容器控制大小，img 填充整个 Box
 const createBrandIcon = (src: string, alt: string, defaultGrayscale = false) => {
-    const Icon = ({ size = 24, sx, style, grayscale = defaultGrayscale }: BrandIconProps) => (
+    return ({size = 24, sx, style, grayscale = defaultGrayscale}: BrandIconProps) => (
         <Box
             sx={{
                 width: size,
@@ -47,17 +47,16 @@ const createBrandIcon = (src: string, alt: string, defaultGrayscale = false) => 
                 src={src}
                 alt={alt}
                 sx={{
+                    display: 'block',
                     width: '100%',
                     height: '100%',
                     objectFit: 'contain',
                     filter: grayscale ? 'grayscale(100%)' : 'none',
-                    opacity: grayscale ? 1: 1,
-                    transition: 'filter 0.2s, opacity 0.2s',
+                    transition: 'filter 0.2s',
                 }}
             />
         </Box>
     );
-    return Icon;
 };
 
 export const OpenAI = createBrandIcon(OpenAISvg, 'OpenAI');
