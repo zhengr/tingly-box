@@ -25,33 +25,6 @@ type ChatGPTBackendRequest struct {
 	TopP          float64       `json:"top_p,omitempty"`
 }
 
-// RequiresMaxCompletionTokens checks if the model requires max_completion_tokens instead of max_tokens.
-// Newer OpenAI models (gpt-4o, o1 series, gpt-4.1) use max_completion_tokens.
-func RequiresMaxCompletionTokens(model string) bool {
-	// Models that require max_completion_tokens
-	modelsRequiringMaxCompletionTokens := []string{
-		"gpt-4o",
-		"gpt-4o-",
-		"gpt-4o-mini",
-		"gpt-4o-mini-",
-		"o1-",
-		"o1-2024",
-		"chatgpt-4o",
-		"chatgpt-4o-",
-		"chatgpt-4o-mini",
-		"chatgpt-4o-mini-",
-		"gpt-4.1",
-		"gpt-4.1-",
-	}
-
-	for _, prefix := range modelsRequiringMaxCompletionTokens {
-		if strings.HasPrefix(model, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
 // ConvertResponseInputToChatGPTFormat converts ResponseInputParam to ChatGPT backend API format.
 func ConvertResponseInputToChatGPTFormat(inputItems responses.ResponseInputParam) []interface{} {
 	var result []interface{}
@@ -65,32 +38,50 @@ func ConvertResponseInputToChatGPTFormat(inputItems responses.ResponseInputParam
 				"role": string(msg.Role),
 			}
 
-			// Determine content type based on role
-			contentType := "input_text"
-			if string(msg.Role) == "assistant" {
-				contentType = "output_text"
-			}
-
-			// Handle content - check if it's a simple string
-			if !param.IsOmitted(msg.Content.OfString) {
-				// Simple string content - convert to ChatGPT format
-				chatGPTItem["content"] = []map[string]string{
-					{"type": contentType, "text": msg.Content.OfString.Value},
-				}
-			} else if !param.IsOmitted(msg.Content.OfInputItemContentList) {
-				// Array content - convert each content item to ChatGPT format
-				var contentItems []map[string]interface{}
-				for _, contentItem := range msg.Content.OfInputItemContentList {
-					if !param.IsOmitted(contentItem.OfInputText) {
-						contentItems = append(contentItems, map[string]interface{}{
-							"type": contentType,
-							"text": contentItem.OfInputText.Text,
-						})
+			// ChatGPT backend only supports 'output_text' and 'refusal' types in content
+			// For user messages, use plain string content without type wrapper
+			if string(msg.Role) == "user" {
+				// Handle content - check if it's a simple string
+				if !param.IsOmitted(msg.Content.OfString) {
+					// Simple string content for user - use plain string
+					chatGPTItem["content"] = msg.Content.OfString.Value
+				} else if !param.IsOmitted(msg.Content.OfInputItemContentList) {
+					// Array content - concatenate text items for user messages
+					var textParts []string
+					for _, contentItem := range msg.Content.OfInputItemContentList {
+						if !param.IsOmitted(contentItem.OfInputText) {
+							textParts = append(textParts, contentItem.OfInputText.Text)
+						}
 					}
-					// Handle other content types as needed (images, audio, etc.)
+					if len(textParts) > 0 {
+						chatGPTItem["content"] = strings.Join(textParts, "\n")
+					}
 				}
-				if len(contentItems) > 0 {
-					chatGPTItem["content"] = contentItems
+			} else if string(msg.Role) == "assistant" {
+				// For assistant messages, use structured content with output_text type
+				contentType := "output_text"
+
+				// Handle content - check if it's a simple string
+				if !param.IsOmitted(msg.Content.OfString) {
+					// Simple string content - convert to ChatGPT format
+					chatGPTItem["content"] = []map[string]string{
+						{"type": contentType, "text": msg.Content.OfString.Value},
+					}
+				} else if !param.IsOmitted(msg.Content.OfInputItemContentList) {
+					// Array content - convert each content item to ChatGPT format
+					var contentItems []map[string]interface{}
+					for _, contentItem := range msg.Content.OfInputItemContentList {
+						if !param.IsOmitted(contentItem.OfInputText) {
+							contentItems = append(contentItems, map[string]interface{}{
+								"type": contentType,
+								"text": contentItem.OfInputText.Text,
+							})
+						}
+						// Handle other content types as needed (images, audio, etc.)
+					}
+					if len(contentItems) > 0 {
+						chatGPTItem["content"] = contentItems
+					}
 				}
 			}
 
@@ -226,11 +217,9 @@ func ConvertRawInputToChatGPTFormat(raw map[string]interface{}) []interface{} {
 	// Handle string input (simple text prompt)
 	if inputStr, ok := inputValue.(string); ok {
 		inputItems = append(inputItems, map[string]interface{}{
-			"type": "message",
-			"role": "user",
-			"content": []map[string]string{
-				{"type": "input_text", "text": inputStr},
-			},
+			"type":    "message",
+			"role":    "user",
+			"content": inputStr, // Plain string for user messages
 		})
 		return inputItems
 	}
@@ -252,24 +241,34 @@ func ConvertRawInputToChatGPTFormat(raw map[string]interface{}) []interface{} {
 
 					// Handle content as string or array
 					if contentStr, ok := itemMap["content"].(string); ok {
-						contentType := "input_text"
-						if role == "assistant" {
-							contentType = "output_text"
-						}
-						inputItem["content"] = []map[string]string{
-							{"type": contentType, "text": contentStr},
+						// For user messages, use plain string; for assistant, use structured format
+						if role == "user" {
+							inputItem["content"] = contentStr
+						} else if role == "assistant" {
+							inputItem["content"] = []map[string]string{
+								{"type": "output_text", "text": contentStr},
+							}
 						}
 					} else if contentArray, ok := itemMap["content"].([]interface{}); ok {
 						var contentItems []map[string]interface{}
 						for _, c := range contentArray {
 							if cMap, ok := c.(map[string]interface{}); ok {
 								cType, _ := cMap["type"].(string)
-								if cType == "input_text" || cType == "output_text" {
+								// Only preserve output_text and refusal types (ChatGPT backend limitation)
+								if cType == "output_text" || cType == "refusal" {
 									text, _ := cMap["text"].(string)
 									contentItems = append(contentItems, map[string]interface{}{
 										"type": cType,
 										"text": text,
 									})
+								} else if cType == "input_text" {
+									// Convert deprecated input_text to plain string for user messages
+									if role == "user" {
+										text, _ := cMap["text"].(string)
+										// For user messages with input_text, extract just the text
+										inputItem["content"] = text
+										continue
+									}
 								}
 							}
 						}

@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/openai/openai-go/v3"
 	"github.com/sirupsen/logrus"
+	"github.com/tingly-dev/tingly-box/internal/data/db"
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/protocol/request"
@@ -332,9 +332,7 @@ func (s *Server) OpenAIChatCompletion(c *gin.Context, req protocol.OpenAIChatCom
 	case protocol.APIStyleOpenAI:
 		// Check if model prefers responses endpoint (for models like Codex)
 
-		// For now, all models with "codex" in their name (case insensitive) prefer completions
-		// In the future, this can be extended to support more models or be configured per-model
-		if strings.Contains(strings.ToLower(actualModel), "codex") {
+		if s.GetPreferredEndpointForModel(provider, actualModel) == string(db.EndpointTypeResponses) {
 			// Convert chat request to responses request
 			s.handleResponsesForChatRequest(c, provider, &req, responseModel, actualModel, isStreaming)
 			return

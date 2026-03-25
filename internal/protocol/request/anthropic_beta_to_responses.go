@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 )
@@ -13,6 +14,11 @@ import (
 func ConvertAnthropicBetaToResponsesRequest(anthropicReq *anthropic.BetaMessageNewParams) responses.ResponseNewParams {
 	params := responses.ResponseNewParams{}
 	params.Model = shared.ResponsesModel(anthropicReq.Model)
+
+	// Set MaxTokens
+	if RequiresMaxCompletionTokens(string(anthropicReq.Model)) {
+		params.MaxOutputTokens = openai.Opt(anthropicReq.MaxTokens)
+	}
 
 	// Convert system messages to Instructions (system/developer role)
 	if len(anthropicReq.System) > 0 {

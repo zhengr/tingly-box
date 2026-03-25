@@ -1045,16 +1045,14 @@ func (s *Server) GetLoadBalancer() *LoadBalancer {
 
 // GetPreferredEndpointForModel returns the preferred endpoint (chat or responses) for a model
 // Returns "responses" if the model supports the Responses API, otherwise returns "chat"
+// Uses AdaptiveProbe to dynamically determine endpoint support
 func (s *Server) GetPreferredEndpointForModel(provider *typ.Provider, modelID string) string {
-	// For now, all models with "codex" in their name (case insensitive) prefer completions
-	// In the future, this can be extended to support more models or be configured per-model
-	if strings.Contains(strings.ToLower(modelID), "codex") {
-		return string(db.EndpointTypeResponses)
-	}
-	// TODO: we use chat as default unless the model do not support chat, e.g. codex
-	// In the future, we can use adaptiveProbe := NewAdaptiveProbe(s)
-	// return adaptiveProbe.GetPreferredEndpoint(provider, modelID)
-	return "chat"
+	// Use adaptive probe to determine preferred endpoint
+	adaptiveProbe := NewAdaptiveProbe(s)
+	preferredEndpoint := adaptiveProbe.GetPreferredEndpoint(provider, modelID)
+
+	logrus.Debugf("[Server] Adaptive probe determined preferred endpoint for model=%s: %s", modelID, preferredEndpoint)
+	return preferredEndpoint
 }
 
 // HealthMonitor returns the server's health monitor

@@ -475,6 +475,9 @@ func (ap *AdaptiveProbe) GetPreferredEndpoint(provider *typ.Provider, modelID st
 		return string(db.EndpointTypeChat)
 	}
 
+	if capability.SupportsChat {
+		return string(db.EndpointTypeChat)
+	}
 	if capability.PreferredEndpoint == string(db.EndpointTypeResponses) {
 		return string(db.EndpointTypeResponses)
 	}

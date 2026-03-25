@@ -111,13 +111,10 @@ func filterCodexRequestJSON(data []byte) ([]byte, bool) {
 			if input, ok := req["input"].([]any); ok {
 				tmp := []any{
 					map[string]any{
-						"content": []map[string]any{
-							{
-								"text": insStr,
-								"type": "input_text",
-							},
-						},
-						"role": "user", "type": "message"},
+						"content": insStr,
+						"role":    "user",
+						"type":    "message",
+					},
 				}
 				if len(input) > 0 {
 					tmp = append(tmp, input...)

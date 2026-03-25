@@ -21,7 +21,9 @@ func ConvertAnthropicBetaToOpenAIRequest(anthropicReq *anthropic.BetaMessageNewP
 	isThinking := IsThinkingEnabledBeta(anthropicReq)
 
 	// Set MaxTokens
-	openaiReq.MaxTokens = openai.Opt(anthropicReq.MaxTokens)
+	if RequiresMaxCompletionTokens(string(anthropicReq.Model)) {
+		openaiReq.MaxCompletionTokens = openai.Opt(anthropicReq.MaxTokens)
+	}
 
 	// Convert messages
 	for _, msg := range anthropicReq.Messages {
