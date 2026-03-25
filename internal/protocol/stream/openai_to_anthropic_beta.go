@@ -117,6 +117,8 @@ func HandleOpenAIToAnthropicBetaStream(c *gin.Context, req *openai.ChatCompletio
 		chunkCount++
 		chunk := stream.Current()
 
+		fmt.Printf("%s\n", chunk.RawJSON())
+
 		// Skip empty chunks (no choices)
 		if len(chunk.Choices) == 0 {
 			// Token counter will handle usage tracking if present in chunk
@@ -256,8 +258,16 @@ func HandleOpenAIToAnthropicBetaStream(c *gin.Context, req *openai.ChatCompletio
 					state.toolIndexToBlockIndex[openaiIndex] = anthropicIndex
 					state.nextBlockIndex++
 
+					// Get tool call ID - use current or stored from previous chunk
+					toolCallID := toolCall.ID
+					if toolCallID == "" {
+						toolCallID = state.toolCallIDByIndex[openaiIndex]
+					} else {
+						// Store ID for future chunks (providers that only send ID in first chunk)
+						state.toolCallIDByIndex[openaiIndex] = toolCallID
+					}
 					// Truncate tool call ID to meet OpenAI's 40 character limit
-					truncatedID := truncateToolCallID(toolCall.ID)
+					truncatedID := truncateToolCallID(toolCallID)
 
 					// Initialize pending tool call
 					state.pendingToolCalls[anthropicIndex] = &pendingToolCall{

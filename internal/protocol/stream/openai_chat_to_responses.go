@@ -21,18 +21,19 @@ import (
 
 // chatToResponsesState tracks the streaming conversion state from Chat Completions to Responses API
 type chatToResponsesState struct {
-	responseID       string
-	createdAt        int64
-	sequenceNumber   int64
-	outputIndex      int
-	textItemID       string
-	hasTextItem      bool
-	pendingToolCalls map[int]*pendingToolCallResponse
-	accumulatedText  strings.Builder
-	inputTokens      int64
-	outputTokens     int64
-	cacheTokens      int64 // Cached tokens from prompt
-	hasSentCreated   bool
+	responseID        string
+	createdAt         int64
+	sequenceNumber    int64
+	outputIndex       int
+	textItemID        string
+	hasTextItem       bool
+	pendingToolCalls  map[int]*pendingToolCallResponse
+	toolCallIDByIndex map[int]string // Store tool call IDs by index for providers that only send ID in first chunk
+	accumulatedText   strings.Builder
+	inputTokens       int64
+	outputTokens      int64
+	cacheTokens       int64 // Cached tokens from prompt
+	hasSentCreated    bool
 }
 
 // pendingToolCallResponse tracks a tool call being assembled from stream chunks
@@ -81,16 +82,17 @@ func HandleOpenAIChatToResponsesStream(c *gin.Context, stream *openaistream.Stre
 
 	// Initialize conversion state
 	state := &chatToResponsesState{
-		responseID:       fmt.Sprintf("resp_%d", time.Now().Unix()),
-		createdAt:        time.Now().Unix(),
-		sequenceNumber:   0,
-		outputIndex:      0,
-		textItemID:       fmt.Sprintf("msg_%d", time.Now().UnixNano()),
-		hasTextItem:      false,
-		pendingToolCalls: make(map[int]*pendingToolCallResponse),
-		inputTokens:      0,
-		outputTokens:     0,
-		hasSentCreated:   false,
+		responseID:        fmt.Sprintf("resp_%d", time.Now().Unix()),
+		createdAt:         time.Now().Unix(),
+		sequenceNumber:    0,
+		outputIndex:       0,
+		textItemID:        fmt.Sprintf("msg_%d", time.Now().UnixNano()),
+		hasTextItem:       false,
+		pendingToolCalls:  make(map[int]*pendingToolCallResponse),
+		toolCallIDByIndex: make(map[int]string),
+		inputTokens:       0,
+		outputTokens:      0,
+		hasSentCreated:    false,
 	}
 
 	// Track text and usage for final completion
@@ -160,11 +162,20 @@ func HandleOpenAIChatToResponsesStream(c *gin.Context, stream *openaistream.Stre
 
 				// Check if this is a new tool call
 				if _, exists := state.pendingToolCalls[openaiIndex]; !exists {
+					// Get tool call ID - use current or stored from previous chunk
+					toolCallID := toolCall.ID
+					if toolCallID == "" {
+						toolCallID = state.toolCallIDByIndex[openaiIndex]
+					} else {
+						// Store ID for future chunks (providers that only send ID in first chunk)
+						state.toolCallIDByIndex[openaiIndex] = toolCallID
+					}
+
 					// Generate item_id for Responses API
 					itemID := fmt.Sprintf("fc_%d_%d", time.Now().Unix(), openaiIndex)
-					if toolCall.ID != "" {
+					if toolCallID != "" {
 						// Use OpenAI's ID if available (may need truncation)
-						itemID = truncateToolCallID(toolCall.ID)
+						itemID = truncateToolCallID(toolCallID)
 					}
 
 					// Start a new output_index for this tool call
@@ -174,14 +185,14 @@ func HandleOpenAIChatToResponsesStream(c *gin.Context, stream *openaistream.Stre
 
 					state.pendingToolCalls[openaiIndex] = &pendingToolCallResponse{
 						itemID:    itemID,
-						callID:    toolCall.ID,
+						callID:    toolCallID,
 						outputIdx: toolOutputIndex,
 						name:      toolCall.Function.Name,
 						arguments: strings.Builder{},
 					}
 
 					// Send output_item.added event
-					sendResponsesOutputItemAdded(c, state, itemID, toolCall.ID, toolCall.Function.Name, toolOutputIndex, flusher)
+					sendResponsesOutputItemAdded(c, state, itemID, toolCallID, toolCall.Function.Name, toolOutputIndex, flusher)
 				}
 
 				// Accumulate and send argument deltas

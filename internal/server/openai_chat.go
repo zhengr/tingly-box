@@ -253,11 +253,13 @@ func (s *Server) handleOpenAIChatStreamingRequest(c *gin.Context, provider *typ.
 
 	// Record TTFT when the first streaming chunk arrives
 	firstTokenRecorded := false
-	hc.WithOnStreamEvent(func(_ interface{}) error {
+	hc.WithOnStreamEvent(func(e interface{}) error {
 		if !firstTokenRecorded {
 			SetFirstTokenTime(c)
 			firstTokenRecorded = true
 		}
+		fmt.Printf("%v\n", e)
+
 		return nil
 	})
 

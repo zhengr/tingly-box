@@ -415,7 +415,7 @@ func (s *Server) handleAnthropicStreamResponseV1Beta(c *gin.Context, req anthrop
 
 	// Record TTFT when the first streaming chunk arrives
 	firstTokenRecorded := false
-	hc.WithOnStreamEvent(func(_ interface{}) error {
+	hc.WithOnStreamEvent(func(e interface{}) error {
 		if !firstTokenRecorded {
 			SetFirstTokenTime(c)
 			firstTokenRecorded = true

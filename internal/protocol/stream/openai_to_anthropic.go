@@ -117,6 +117,8 @@ func HandleOpenAIToAnthropicStreamResponse(c *gin.Context, req *openai.ChatCompl
 		chunkCount++
 		chunk := stream.Current()
 
+		fmt.Printf("%s\n", chunk.RawJSON())
+
 		logrus.Infof("[Stream] Got chunk #%d: len(choices)=%d", chunkCount, len(chunk.Choices))
 
 		// Skip empty chunks (no choices)
@@ -260,8 +262,16 @@ func HandleOpenAIToAnthropicStreamResponse(c *gin.Context, req *openai.ChatCompl
 					state.toolIndexToBlockIndex[openaiIndex] = anthropicIndex
 					state.nextBlockIndex++
 
+					// Get tool call ID - use current or stored from previous chunk
+					toolCallID := toolCall.ID
+					if toolCallID == "" {
+						toolCallID = state.toolCallIDByIndex[openaiIndex]
+					} else {
+						// Store ID for future chunks (providers that only send ID in first chunk)
+						state.toolCallIDByIndex[openaiIndex] = toolCallID
+					}
 					// Truncate tool call ID to meet OpenAI's 40 character limit
-					truncatedID := truncateToolCallID(toolCall.ID)
+					truncatedID := truncateToolCallID(toolCallID)
 
 					// Initialize pending tool call
 					state.pendingToolCalls[anthropicIndex] = &pendingToolCall{

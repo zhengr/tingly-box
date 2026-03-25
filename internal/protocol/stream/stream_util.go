@@ -15,6 +15,7 @@ type streamState struct {
 	nextBlockIndex             int
 	pendingToolCalls           map[int]*pendingToolCall
 	toolIndexToBlockIndex      map[int]int
+	toolCallIDByIndex          map[int]string // Store tool call IDs by index for providers that only send ID in first chunk
 	deltaExtras                map[string]interface{}
 	outputTokens               int64
 	inputTokens                int64
@@ -32,6 +33,7 @@ func newStreamState() *streamState {
 		nextBlockIndex:             0,
 		pendingToolCalls:           make(map[int]*pendingToolCall),
 		toolIndexToBlockIndex:      make(map[int]int),
+		toolCallIDByIndex:          make(map[int]string),
 		deltaExtras:                make(map[string]interface{}),
 		stoppedBlocks:              make(map[int]bool),
 	}

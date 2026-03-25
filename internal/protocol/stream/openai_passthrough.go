@@ -41,6 +41,8 @@ func HandleOpenAIChatStream(hc *protocol.HandleContext, streamResp *openaistream
 	var hasUsage bool
 	var contentBuilder strings.Builder
 	var firstChunkID string
+	// Track tool call IDs across chunks to handle providers that only send ID in first chunk
+	toolCallIDs := make(map[int]string) // map[toolIndex]toolCallID
 
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
@@ -67,6 +69,8 @@ func HandleOpenAIChatStream(hc *protocol.HandleContext, streamResp *openaistream
 		},
 		func(event interface{}) error {
 			chunk := event.(*openai.ChatCompletionChunk)
+
+			fmt.Printf("chunk: %s\n", chunk.RawJSON())
 
 			// Store the first chunk ID for usage estimation
 			if firstChunkID == "" && chunk.ID != "" {
@@ -126,19 +130,26 @@ func HandleOpenAIChatStream(hc *protocol.HandleContext, streamResp *openaistream
 			if hasToolCalls {
 				// Clean up tool_calls to remove empty name/id fields in subsequent chunks
 				// This matches OpenAI's actual streaming format where only the first chunk has name
+				// Also handles providers (like some middlemen APIs) that only send ID in first chunk
 				cleanedToolCalls := make([]map[string]interface{}, 0, len(choice.Delta.ToolCalls))
 				for _, tc := range choice.Delta.ToolCalls {
 					// Parse the raw JSON to get the actual fields
 					var rawTc map[string]interface{}
 					if err := json.Unmarshal([]byte(tc.RawJSON()), &rawTc); err == nil {
 						cleanedTc := make(map[string]interface{})
+						toolIndex := int(tc.Index)
+
 						// Always include index
 						if idx, ok := rawTc["index"]; ok {
 							cleanedTc["index"] = idx
 						}
-						// Include id only if non-empty (first chunk has id, subsequent don't)
-						if id, ok := rawTc["id"]; ok && id != "" {
+						// Include id only if non-empty, otherwise use previously stored ID
+						if id, ok := rawTc["id"].(string); ok && id != "" {
+							toolCallIDs[toolIndex] = id // Store for future chunks
 							cleanedTc["id"] = id
+						} else if storedID, exists := toolCallIDs[toolIndex]; exists {
+							// Preserve ID from previous chunk
+							cleanedTc["id"] = storedID
 						}
 						// Include type only if id is present (first chunk only)
 						// DeepSeek format: type only in first chunk, not in subsequent chunks
