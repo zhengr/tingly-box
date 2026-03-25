@@ -207,30 +207,40 @@ func convertV1AssistantMessageToResponsesInput(msg anthropic.MessageParam) []res
 	}
 
 	// Add text content as a separate message if present
+	// Use ResponseOutputMessage with output_text type for assistant messages
+	// to ensure compatibility with strict API providers
 	if textContent != "" {
-		messageItem := responses.EasyInputMessageParam{
-			Type: responses.EasyInputMessageTypeMessage,
-			Role: responses.EasyInputMessageRole("assistant"),
-			Content: responses.EasyInputMessageContentUnionParam{
-				OfString: param.NewOpt(textContent),
+		outputMessage := responses.ResponseOutputMessageParam{
+			ID:     "",
+			Status: "completed",
+			Content: []responses.ResponseOutputMessageContentUnionParam{
+				{
+					OfOutputText: &responses.ResponseOutputTextParam{
+						Text: textContent,
+					},
+				},
 			},
 		}
 		items = append(items, responses.ResponseInputItemUnionParam{
-			OfMessage: &messageItem,
+			OfOutputMessage: &outputMessage,
 		})
 	}
 
 	// If no items were created, create an empty assistant message
 	if len(items) == 0 {
-		messageItem := responses.EasyInputMessageParam{
-			Type: responses.EasyInputMessageTypeMessage,
-			Role: responses.EasyInputMessageRole("assistant"),
-			Content: responses.EasyInputMessageContentUnionParam{
-				OfString: param.NewOpt(""),
+		outputMessage := responses.ResponseOutputMessageParam{
+			ID:     "",
+			Status: "completed",
+			Content: []responses.ResponseOutputMessageContentUnionParam{
+				{
+					OfOutputText: &responses.ResponseOutputTextParam{
+						Text: "",
+					},
+				},
 			},
 		}
 		items = append(items, responses.ResponseInputItemUnionParam{
-			OfMessage: &messageItem,
+			OfOutputMessage: &outputMessage,
 		})
 	}
 
