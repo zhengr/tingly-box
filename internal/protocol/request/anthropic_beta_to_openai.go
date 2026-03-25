@@ -2,12 +2,14 @@ package request
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/shared"
+	"github.com/sirupsen/logrus"
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 )
 
@@ -25,11 +27,24 @@ func ConvertAnthropicBetaToOpenAIRequest(anthropicReq *anthropic.BetaMessageNewP
 		openaiReq.MaxCompletionTokens = openai.Opt(anthropicReq.MaxTokens)
 	}
 
-	// Convert messages
+	// First pass: collect all tool_use IDs from assistant messages
+	// This is needed to validate tool_result blocks in user messages
+	toolUseIDs := make(map[string]bool)
+	for _, msg := range anthropicReq.Messages {
+		if string(msg.Role) == "assistant" {
+			for _, block := range msg.Content {
+				if block.OfToolUse != nil {
+					toolUseIDs[block.OfToolUse.ID] = true
+				}
+			}
+		}
+	}
+
+	// Second pass: convert messages
 	for _, msg := range anthropicReq.Messages {
 		if string(msg.Role) == "user" {
 			// User messages may contain tool_result blocks - need special handling
-			messages := convertAnthropicBetaUserMessageToOpenAI(msg)
+			messages := convertAnthropicBetaUserMessageToOpenAI(msg, toolUseIDs)
 			openaiReq.Messages = append(openaiReq.Messages, messages...)
 		} else if string(msg.Role) == "assistant" {
 			// Convert assistant message with potential tool_use blocks
@@ -245,7 +260,8 @@ func convertAnthropicBetaAssistantMessageToOpenAI(msg anthropic.BetaMessageParam
 }
 
 // convertAnthropicBetaUserMessageToOpenAI converts Anthropic beta user message to OpenAI format
-func convertAnthropicBetaUserMessageToOpenAI(msg anthropic.BetaMessageParam) []openai.ChatCompletionMessageParamUnion {
+// toolUseIDs: map of valid tool_use IDs from previous assistant messages
+func convertAnthropicBetaUserMessageToOpenAI(msg anthropic.BetaMessageParam, toolUseIDs map[string]bool) []openai.ChatCompletionMessageParamUnion {
 	var result []openai.ChatCompletionMessageParamUnion
 	var textContent string
 	var hasToolResult bool
@@ -265,9 +281,22 @@ func convertAnthropicBetaUserMessageToOpenAI(msg anthropic.BetaMessageParam) []o
 			if block.OfText != nil {
 				textContent += block.OfText.Text
 			} else if block.OfToolResult != nil {
-				// Convert tool_result to OpenAI role="tool" message
+				// Check if this tool_result has a corresponding tool_use in the current request
+				toolUseID := block.OfToolResult.ToolUseID
+				truncatedID := truncateToolCallID(toolUseID)
+
+				if !toolUseIDs[toolUseID] && !toolUseIDs[truncatedID] {
+					// No corresponding tool_use found - convert to user text message instead
+					logrus.Warnf("[Anthropic Beta→OpenAI] Skipping tool_result with unmatched tool_use_id=%s (not in current request messages)", toolUseID)
+
+					// Add tool result as text content instead
+					resultText := convertBetaToolResultContent(block.OfToolResult.Content)
+					textContent += fmt.Sprintf("[Tool Result]: %s\n", resultText)
+					continue
+				}
+
+				// Valid tool_result - convert to OpenAI role="tool" message
 				// Truncate tool_call_id to meet OpenAI's 40 character limit
-				truncatedID := truncateToolCallID(block.OfToolResult.ToolUseID)
 				toolMsg := map[string]interface{}{
 					"role":         "tool",
 					"tool_call_id": truncatedID,

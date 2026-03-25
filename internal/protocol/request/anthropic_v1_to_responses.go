@@ -2,11 +2,13 @@ package request
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
+	"github.com/sirupsen/logrus"
 )
 
 // ConvertAnthropicV1ToResponsesRequest converts Anthropic v1 request to OpenAI Responses API format
@@ -66,9 +68,22 @@ func ConvertAnthropicV1ToResponsesRequest(anthropicReq *anthropic.MessageNewPara
 func convertV1MessagesToResponsesInput(messages []anthropic.MessageParam) responses.ResponseInputParam {
 	var inputItems responses.ResponseInputParam
 
+	// First pass: collect all tool_use IDs from assistant messages
+	toolUseIDs := make(map[string]bool)
+	for _, msg := range messages {
+		if string(msg.Role) == "assistant" {
+			for _, block := range msg.Content {
+				if block.OfToolUse != nil {
+					toolUseIDs[block.OfToolUse.ID] = true
+				}
+			}
+		}
+	}
+
+	// Second pass: convert messages
 	for _, msg := range messages {
 		if string(msg.Role) == "user" {
-			items := convertV1UserMessageToResponsesInput(msg)
+			items := convertV1UserMessageToResponsesInput(msg, toolUseIDs)
 			inputItems = append(inputItems, items...)
 		} else if string(msg.Role) == "assistant" {
 			items := convertV1AssistantMessageToResponsesInput(msg)
@@ -80,7 +95,7 @@ func convertV1MessagesToResponsesInput(messages []anthropic.MessageParam) respon
 }
 
 // convertV1UserMessageToResponsesInput converts Anthropic v1 user message to Responses API input items
-func convertV1UserMessageToResponsesInput(msg anthropic.MessageParam) []responses.ResponseInputItemUnionParam {
+func convertV1UserMessageToResponsesInput(msg anthropic.MessageParam, toolUseIDs map[string]bool) []responses.ResponseInputItemUnionParam {
 	var items []responses.ResponseInputItemUnionParam
 
 	// Check for tool_result blocks
@@ -96,9 +111,29 @@ func convertV1UserMessageToResponsesInput(msg anthropic.MessageParam) []response
 		// When there are tool_result blocks, we need to create separate items
 		for _, block := range msg.Content {
 			if block.OfToolResult != nil {
-				// Convert tool_result to function_call_output
+				// Check if this tool_result has a corresponding tool_use
+				toolUseID := block.OfToolResult.ToolUseID
+				if !toolUseIDs[toolUseID] {
+					// No corresponding tool_use - convert to text message
+					logrus.Warnf("[Anthropic V1→Responses] Skipping tool_result with unmatched tool_use_id=%s", toolUseID)
+
+					resultText := convertV1ToolResultContentToString(block.OfToolResult.Content)
+					messageItem := responses.EasyInputMessageParam{
+						Type: responses.EasyInputMessageTypeMessage,
+						Role: responses.EasyInputMessageRole("user"),
+						Content: responses.EasyInputMessageContentUnionParam{
+							OfString: param.NewOpt(fmt.Sprintf("[Tool Result]: %s", resultText)),
+						},
+					}
+					items = append(items, responses.ResponseInputItemUnionParam{
+						OfMessage: &messageItem,
+					})
+					continue
+				}
+
+				// Valid tool_result - convert to function_call_output
 				outputItem := responses.ResponseInputItemFunctionCallOutputParam{
-					CallID: block.OfToolResult.ToolUseID,
+					CallID: toolUseID,
 					Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
 						OfString: param.NewOpt(convertV1ToolResultContentToString(block.OfToolResult.Content)),
 					},

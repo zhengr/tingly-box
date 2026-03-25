@@ -2,12 +2,14 @@ package request
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/shared"
+	"github.com/sirupsen/logrus"
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 )
 
@@ -23,11 +25,23 @@ func ConvertAnthropicToOpenAIRequest(anthropicReq *anthropic.MessageNewParams, c
 	// Set MaxTokens
 	openaiReq.MaxTokens = openai.Opt(anthropicReq.MaxTokens)
 
-	// Convert messages
+	// First pass: collect all tool_use IDs from assistant messages
+	toolUseIDs := make(map[string]bool)
+	for _, msg := range anthropicReq.Messages {
+		if string(msg.Role) == "assistant" {
+			for _, block := range msg.Content {
+				if block.OfToolUse != nil {
+					toolUseIDs[block.OfToolUse.ID] = true
+				}
+			}
+		}
+	}
+
+	// Second pass: convert messages
 	for _, msg := range anthropicReq.Messages {
 		if string(msg.Role) == "user" {
 			// User messages may contain tool_result blocks - need special handling
-			messages := convertAnthropicUserMessageToOpenAI(msg)
+			messages := convertAnthropicUserMessageToOpenAI(msg, toolUseIDs)
 			openaiReq.Messages = append(openaiReq.Messages, messages...)
 		} else if string(msg.Role) == "assistant" {
 			// Convert assistant message with potential tool_use blocks
@@ -260,7 +274,7 @@ func convertAnthropicAssistantMessageToOpenAI(msg anthropic.MessageParam) openai
 // This handles text content and tool_result blocks
 // tool_result blocks in Anthropic become separate role="tool" messages in OpenAI
 // Returns a slice of messages because tool results become separate messages
-func convertAnthropicUserMessageToOpenAI(msg anthropic.MessageParam) []openai.ChatCompletionMessageParamUnion {
+func convertAnthropicUserMessageToOpenAI(msg anthropic.MessageParam, toolUseIDs map[string]bool) []openai.ChatCompletionMessageParamUnion {
 	var result []openai.ChatCompletionMessageParamUnion
 	var textContent string
 	var hasToolResult bool
@@ -280,9 +294,22 @@ func convertAnthropicUserMessageToOpenAI(msg anthropic.MessageParam) []openai.Ch
 			if block.OfText != nil {
 				textContent += block.OfText.Text
 			} else if block.OfToolResult != nil {
-				// Convert tool_result to OpenAI role="tool" message
+				// Check if this tool_result has a corresponding tool_use
+				toolUseID := block.OfToolResult.ToolUseID
+				truncatedID := truncateToolCallID(toolUseID)
+
+				if !toolUseIDs[toolUseID] && !toolUseIDs[truncatedID] {
+					// No corresponding tool_use found
+					logrus.Warnf("[Anthropic V1→OpenAI] Skipping tool_result with unmatched tool_use_id=%s", toolUseID)
+
+					// Add tool result as text content instead
+					resultText := convertToolResultContent(block.OfToolResult.Content)
+					textContent += fmt.Sprintf("[Tool Result]: %s\n", resultText)
+					continue
+				}
+
+				// Valid tool_result - convert to OpenAI role="tool" message
 				// Truncate tool_call_id to meet OpenAI's 40 character limit
-				truncatedID := truncateToolCallID(block.OfToolResult.ToolUseID)
 				toolMsg := map[string]interface{}{
 					"role":         "tool",
 					"tool_call_id": truncatedID,

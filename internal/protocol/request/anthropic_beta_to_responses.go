@@ -2,11 +2,13 @@ package request
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
+	"github.com/sirupsen/logrus"
 )
 
 // ConvertAnthropicBetaToResponsesRequest converts Anthropic beta request to OpenAI Responses API format
@@ -29,9 +31,23 @@ func ConvertAnthropicBetaToResponsesRequest(anthropicReq *anthropic.BetaMessageN
 	// Build conversation as a list of input items
 	var inputItems []responses.ResponseInputItemUnionParam
 
+	// First pass: collect all tool_use IDs from assistant messages
+	// This is needed to validate tool_result blocks in user messages
+	toolUseIDs := make(map[string]bool)
+	for _, msg := range anthropicReq.Messages {
+		if string(msg.Role) == "assistant" {
+			for _, block := range msg.Content {
+				if block.OfToolUse != nil {
+					toolUseIDs[block.OfToolUse.ID] = true
+				}
+			}
+		}
+	}
+
+	// Second pass: convert messages to input items
 	for _, msg := range anthropicReq.Messages {
 		if string(msg.Role) == "user" {
-			items := convertBetaUserMessageToResponsesInput(msg)
+			items := convertBetaUserMessageToResponsesInput(msg, toolUseIDs)
 			inputItems = append(inputItems, items...)
 		} else if string(msg.Role) == "assistant" {
 			items := convertBetaAssistantMessageToResponsesInput(msg)
@@ -86,7 +102,8 @@ func ConvertAnthropicBetaToResponsesRequest(anthropicReq *anthropic.BetaMessageN
 
 // convertBetaUserMessageToResponsesInput converts Anthropic beta user message to Responses API input items
 // Handles text content and tool_result blocks
-func convertBetaUserMessageToResponsesInput(msg anthropic.BetaMessageParam) []responses.ResponseInputItemUnionParam {
+// toolUseIDs: map of valid tool_use IDs from previous assistant messages
+func convertBetaUserMessageToResponsesInput(msg anthropic.BetaMessageParam, toolUseIDs map[string]bool) []responses.ResponseInputItemUnionParam {
 	var items []responses.ResponseInputItemUnionParam
 
 	// Check for tool_result blocks
@@ -102,9 +119,30 @@ func convertBetaUserMessageToResponsesInput(msg anthropic.BetaMessageParam) []re
 		// When there are tool_result blocks, we need to create separate items
 		for _, block := range msg.Content {
 			if block.OfToolResult != nil {
-				// Convert tool_result to Responses API function call output
+				// Check if this tool_result has a corresponding tool_use in the current request
+				toolUseID := block.OfToolResult.ToolUseID
+				if !toolUseIDs[toolUseID] {
+					// No corresponding tool_use found - convert to text message instead
+					logrus.Warnf("[Anthropic→Responses] Skipping tool_result with unmatched tool_use_id=%s (not in current request messages)", toolUseID)
+
+					// Convert tool result to descriptive text
+					resultText := convertBetaToolResultContent(block.OfToolResult.Content)
+					messageItem := responses.EasyInputMessageParam{
+						Type: responses.EasyInputMessageTypeMessage,
+						Role: responses.EasyInputMessageRole("user"),
+						Content: responses.EasyInputMessageContentUnionParam{
+							OfString: ParamOpt(fmt.Sprintf("[Tool Result]: %s", resultText)),
+						},
+					}
+					items = append(items, responses.ResponseInputItemUnionParam{
+						OfMessage: &messageItem,
+					})
+					continue
+				}
+
+				// Valid tool_result - convert to function call output
 				outputItem := responses.ResponseInputItemFunctionCallOutputParam{
-					CallID: block.OfToolResult.ToolUseID,
+					CallID: toolUseID,
 					Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
 						OfString: ParamOpt(convertBetaToolResultContent(block.OfToolResult.Content)),
 					},
