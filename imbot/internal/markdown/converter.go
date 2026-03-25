@@ -48,6 +48,12 @@ func Convert(markdown string) (*ConvertResult, error) {
 // and adjusts entity offsets for each chunk.
 //
 // Entities that span a split boundary are clipped to fit within chunks.
+//
+// Algorithm:
+//   1. Build UTF-16 offset table: Maps byte positions to UTF-16 code unit offsets
+//   2. Find newline positions: Identifies potential split points for better readability
+//   3. Determine chunk boundaries: Splits text at newlines when possible, hard-splits at UTF-16 boundaries otherwise
+//   4. Adjust entities: Recalculates entity offsets and clips entities that cross chunk boundaries
 func SplitEntities(text string, entities []MessageEntity, maxUTF16Len int) []ConvertResult {
 	totalLen := UTF16Len(text)
 
@@ -59,16 +65,16 @@ func SplitEntities(text string, entities []MessageEntity, maxUTF16Len int) []Con
 		}}
 	}
 
-	// Build UTF-16 offset table
+	// Pass 1: Build UTF-16 offset table for byte→UTF-16 position mapping
 	offsets := UTF16OffsetTable(text)
 
-	// Find newline positions (prefer splitting at newlines)
+	// Pass 2: Find newline positions (prefer splitting at newlines for readability)
 	newlinePositions := findNewlinePositions(text)
 
-	// Determine chunk boundaries
+	// Pass 3: Determine chunk boundaries based on UTF-16 limits and newlines
 	chunks := determineChunks(text, offsets, newlinePositions, maxUTF16Len)
 
-	// Build results with adjusted entities
+	// Pass 4: Build results with adjusted entities for each chunk
 	results := make([]ConvertResult, len(chunks))
 	for i, chunk := range chunks {
 		chunkText := text[chunk.start:chunk.end]

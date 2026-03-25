@@ -1,5 +1,7 @@
 package markdown
 
+import "unicode/utf8"
+
 // UTF16Len returns the length of a string in UTF-16 code units.
 //
 // Telegram measures entity offsets and lengths in UTF-16 code units,
@@ -36,7 +38,7 @@ func UTF16OffsetTable(text string) []int {
 	bytePos := 0
 
 	for _, r := range text {
-		runeLen := len(string(r))
+		runeLen := utf8.RuneLen(r)
 		// Set offset for all bytes of this rune
 		for i := 0; i < runeLen; i++ {
 			offsets[bytePos+i] = utf16Pos

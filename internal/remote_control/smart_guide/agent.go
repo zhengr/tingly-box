@@ -90,34 +90,7 @@ func NewTinglyBoxAgent(config *AgentConfig) (*TinglyBoxAgent, error) {
 
 	// Set approval callback if handler is provided
 	if config.Handler != nil {
-		executor.SetApprovalCallback(func(ctx context.Context, req ApprovalRequest) (bool, error) {
-			// Call handler's OnApproval with proper context
-			result, err := config.Handler.OnApproval(ctx, agentboot.PermissionRequest{
-				RequestID: uuid.New().String(),
-				AgentType: AgentTypeTinglyBox,
-				ToolName:  "bash",
-				Input: map[string]interface{}{
-					"command": req.Command,
-					"args":    req.Args,
-				},
-				Reason:    req.Reason,
-				SessionID: config.ChatID, // Use chatID as session identifier
-				BotUUID:   config.BotUUID,
-				ChatID:    config.ChatID,
-				Platform:  config.Platform,
-			})
-			if err != nil {
-				logrus.WithError(err).WithField("command", req.Command).Error("Approval request failed")
-				return false, err
-			}
-
-			logrus.WithFields(logrus.Fields{
-				"command":  req.Command,
-				"approved": result.Approved,
-			}).Info("Approval result")
-
-			return result.Approved, nil
-		})
+		executor.SetApprovalCallback(tb.createApprovalCallback(&config))
 		logrus.WithField("chatID", config.ChatID).Info("Approval callback configured for ToolExecutor")
 	}
 
@@ -235,6 +208,41 @@ func NewTinglyBoxAgentWithSession(config *AgentConfig, messages []*message.Msg) 
 	}
 
 	return tbAgent, nil
+}
+
+// createApprovalCallback creates an approval callback function for tool execution
+func (a *TinglyBoxAgent) createApprovalCallback(config *AgentConfig) func(context.Context, ApprovalRequest) (bool, error) {
+	return func(ctx context.Context, req ApprovalRequest) (bool, error) {
+		// Build permission request
+		permReq := agentboot.PermissionRequest{
+			RequestID: uuid.New().String(),
+			AgentType: AgentTypeTinglyBox,
+			ToolName:  "bash",
+			Input: map[string]interface{}{
+				"command": req.Command,
+				"args":    req.Args,
+			},
+			Reason:    req.Reason,
+			SessionID: config.ChatID, // Use chatID as session identifier
+			BotUUID:   config.BotUUID,
+			ChatID:    config.ChatID,
+			Platform:  config.Platform,
+		}
+
+		// Request approval from handler
+		result, err := config.Handler.OnApproval(ctx, permReq)
+		if err != nil {
+			logrus.WithError(err).WithField("command", req.Command).Error("Approval request failed")
+			return false, err
+		}
+
+		logrus.WithFields(logrus.Fields{
+			"command":  req.Command,
+			"approved": result.Approved,
+		}).Info("Approval result")
+
+		return result.Approved, nil
+	}
 }
 
 // ReplyWithContext handles a user message with additional context

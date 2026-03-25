@@ -1,6 +1,7 @@
 package markdown
 
 import (
+	"log"
 	"strings"
 
 	"github.com/yuin/goldmark"
@@ -264,6 +265,8 @@ func (w *walker) pushEntity(entityType, url, language string) {
 // popEntity closes the most recent entity
 func (w *walker) popEntity() {
 	if len(w.stack) == 0 {
+		// Malformed markdown may cause unbalanced entities (e.g., **bold *italic**)
+		log.Printf("[markdown] Warning: popEntity called with empty stack - markdown may be malformed")
 		return
 	}
 
