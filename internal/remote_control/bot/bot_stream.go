@@ -57,6 +57,9 @@ func (h *streamingMessageHandler) OnMessage(msg interface{}) error {
 
 	// Handle specific types
 	switch m := msg.(type) {
+	case string:
+		h.sendMessage(m)
+		return nil
 	case *claude.AssistantMessage:
 		meaningful := false
 		for _, c := range m.Message.Content {
