@@ -128,9 +128,9 @@ type ConfigOption func(*configOptions)
 
 // configOptions holds the options for creating a new Config
 type configOptions struct {
-	configDir     string
-	skipMigration bool
-	skipBuiltIn   bool
+	configDir       string
+	enableMigration bool
+	enableBuiltIn   bool
 }
 
 // WithConfigDir returns a ConfigOption that sets a custom config directory
@@ -140,18 +140,18 @@ func WithConfigDir(dir string) ConfigOption {
 	}
 }
 
-// WithSkipMigration returns a ConfigOption that skips the migration step
+// WithDisableMigration returns a ConfigOption that disables the migration step
 // Useful when using tingly-box as a library in external projects
-func WithSkipMigration() ConfigOption {
+func WithDisableMigration() ConfigOption {
 	return func(opts *configOptions) {
-		opts.skipMigration = true
+		opts.enableMigration = false
 	}
 }
 
-// WithSkipBuiltIn returns a ConfigOption that skips the built-in rules creation
-func WithSkipBuiltIn() ConfigOption {
+// WithDisableBuiltIn returns a ConfigOption that disables the built-in rules creation
+func WithDisableBuiltIn() ConfigOption {
 	return func(opts *configOptions) {
-		opts.skipBuiltIn = true
+		opts.enableBuiltIn = false
 	}
 }
 
@@ -173,8 +173,9 @@ func NewDefaultConfig() (*Config, error) {
 func NewConfig(opts ...ConfigOption) (*Config, error) {
 	// Apply options
 	options := &configOptions{
-		configDir:     "", // Will be set to default if empty
-		skipMigration: false,
+		configDir:       "", // Will be set to default if empty
+		enableMigration: true,
+		enableBuiltIn:   true,
 	}
 	for _, opt := range opts {
 		opt(options)
@@ -231,18 +232,18 @@ func NewConfig(opts ...ConfigOption) (*Config, error) {
 		}
 	} else {
 		// Run migration only once at startup (not on every load/reload)
-		// Skip migration if the option is set (useful when using as a library)
-		if options.skipMigration {
-			logrus.Warnf("skip migration enabled")
+		// Skip migration if disabled (useful when using as a library)
+		if !options.enableMigration {
+			logrus.Warnf("migration disabled")
 		} else {
 			Migrate(cfg)
 			cfg.Save()
 		}
 	}
 
-	// allow to skip for some usage
-	if options.skipBuiltIn {
-		logrus.Warnf("skipping built in config")
+	// Built-in rules setup
+	if !options.enableBuiltIn {
+		logrus.Warnf("built-in rules disabled")
 	} else {
 		cfg.InsertDefaultRule()
 		if cfg.VirtualModelToken == "" {
