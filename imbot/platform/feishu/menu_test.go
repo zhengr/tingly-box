@@ -27,7 +27,7 @@ func TestMenuAdapterSupports(t *testing.T) {
 func TestMenuAdapterConvertToInteractiveCard(t *testing.T) {
 	adapter := NewMenuAdapter()
 
-	m := menu.NewBuilder("test-menu", menu.MenuTypeInlineKeyboard).
+	m := menu.NewBuilder("test-menu").
 		WithTitle("Test Menu").
 		AddRow(
 			menu.CallbackItem("btn1", "Button 1", "val1"),
@@ -57,12 +57,15 @@ func TestMenuAdapterConvertToInteractiveCard(t *testing.T) {
 func TestMenuAdapterConvertToQuickActions(t *testing.T) {
 	adapter := NewMenuAdapter()
 
-	m := menu.NewBuilder("quick-menu", menu.MenuTypeQuickActions).
+	m := menu.NewBuilder("quick-menu").
 		AddRow(
 			menu.CallbackItem("action1", "Action 1", "val1"),
 			menu.CallbackItem("action2", "Action 2", "val2"),
 		).
 		Build()
+
+	// Set menu type to QuickActions
+	m.SetQuickActions()
 
 	actionData, err := adapter.ConvertMenu(m)
 	if err != nil {
@@ -84,7 +87,7 @@ func TestMenuAdapterConvertToQuickActions(t *testing.T) {
 }
 
 func TestMenuAdapterParseAction(t *testing.T) {
-	adapter := NewMenuAdapter()
+	a := NewMenuAdapter()
 
 	// Test with callback data in metadata
 	msg := adapter.NewMessageBuilder(core.PlatformFeishu).
@@ -95,7 +98,7 @@ func TestMenuAdapterParseAction(t *testing.T) {
 		WithMetadata("action", "menu_id:item_id:value").
 		Build()
 
-	action, err := adapter.ParseAction(msg)
+	action, err := a.ParseAction(msg)
 	if err != nil {
 		t.Fatalf("ParseAction failed: %v", err)
 	}
@@ -120,7 +123,7 @@ func TestMenuAdapterParseAction(t *testing.T) {
 func TestMenuAdapterBuildCardFromMenu(t *testing.T) {
 	adapter := NewMenuAdapter()
 
-	m := menu.NewBuilder("test-menu", menu.MenuTypeInlineKeyboard).
+	m := menu.NewBuilder("test-menu").
 		WithTitle("Test Card").
 		AddRow(
 			menu.CallbackItem("btn1", "Button 1", "val1"),
@@ -140,7 +143,7 @@ func TestMenuAdapterBuildCardFromMenu(t *testing.T) {
 func TestMenuAdapterGetCardJSON(t *testing.T) {
 	adapter := NewMenuAdapter()
 
-	m := menu.NewBuilder("test-menu", menu.MenuTypeInlineKeyboard).
+	m := menu.NewBuilder("test-menu").
 		WithTitle("Test Card").
 		AddRow(
 			menu.CallbackItem("btn1", "Button 1", "val1"),
@@ -160,7 +163,7 @@ func TestMenuAdapterGetCardJSON(t *testing.T) {
 func TestMenuAdapterCreateQuickActionConfig(t *testing.T) {
 	adapter := NewMenuAdapter()
 
-	m := menu.NewBuilder("quick-menu", menu.MenuTypeQuickActions).
+	m := menu.NewBuilder("quick-menu").
 		AddRow(
 			menu.CallbackItem("action1", "Action 1", "val1"),
 		).

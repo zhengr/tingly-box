@@ -207,10 +207,8 @@ func TestGetAccountInfo(t *testing.T) {
 	config := &core.Config{
 		Platform: core.PlatformWeixin,
 		Auth: core.AuthConfig{
-			Type: "qr",
-		},
-		Options: map[string]interface{}{
-			"accountId": "test-account",
+			Type:      "qr",
+			AccountID: "test-account",
 		},
 	}
 	bot, err := NewBot(config)

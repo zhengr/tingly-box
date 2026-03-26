@@ -134,7 +134,7 @@ func TestGetPlatformName(t *testing.T) {
 		{"Google Chat", PlatformGoogleChat, "Google Chat"},
 		{"Signal", PlatformSignal, "Signal"},
 		{"BlueBubbles", PlatformBlueBubbles, "BlueBubbles (iMessage)"},
-		{"Feishu", PlatformFeishu, "Feishu/Lark"},
+		{"Feishu", PlatformFeishu, "Feishu"},
 		{"WebChat", PlatformWebChat, "WebChat"},
 	}
 
@@ -179,7 +179,7 @@ func TestPlatformCapabilities(t *testing.T) {
 			name:                  "Telegram",
 			platform:              PlatformTelegram,
 			wantChatTypes:         4,
-			wantFeatures:          6,
+			wantFeatures:          9, // reactions, edit, delete, threads, polls, nativeCommands, inlineKeyboards, callbackQueries, messageEditing
 			wantTextLimit:         4096,
 			wantSupportsReactions: true,
 		},
@@ -187,7 +187,7 @@ func TestPlatformCapabilities(t *testing.T) {
 			name:                  "Discord",
 			platform:              PlatformDiscord,
 			wantChatTypes:         4,
-			wantFeatures:          6,
+			wantFeatures:          8, // reactions, edit, delete, threads, nativeCommands, mentions, components, messageEditing
 			wantTextLimit:         2000,
 			wantSupportsReactions: true,
 		},
@@ -195,7 +195,7 @@ func TestPlatformCapabilities(t *testing.T) {
 			name:                  "Slack",
 			platform:              PlatformSlack,
 			wantChatTypes:         4,
-			wantFeatures:          5,
+			wantFeatures:          7, // reactions, edit, delete, threads, mentions, blockKit, messageEditing
 			wantTextLimit:         40000,
 			wantSupportsReactions: true,
 		},

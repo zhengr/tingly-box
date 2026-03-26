@@ -3,25 +3,25 @@ package telegram
 import (
 	"testing"
 
-	"github.com/tingly-dev/tingly-box/imbot/builder"
+	"github.com/tingly-dev/tingly-box/imbot/adapter"
 	"github.com/tingly-dev/tingly-box/imbot/core"
 	"github.com/tingly-dev/tingly-box/imbot/menu"
 )
 
 func TestMenuAdapterSupports(t *testing.T) {
-	adapter := NewMenuAdapter()
+	a := NewMenuAdapter()
 
-	if !adapter.Supports(core.PlatformTelegram) {
+	if !a.Supports(core.PlatformTelegram) {
 		t.Errorf("Expected adapter to support Telegram")
 	}
 
-	if adapter.Supports(core.PlatformLark) {
+	if a.Supports(core.PlatformLark) {
 		t.Errorf("Expected adapter not to support Lark")
 	}
 }
 
 func TestMenuAdapterConvertToInlineKeyboard(t *testing.T) {
-	adapter := NewMenuAdapter()
+	a := NewMenuAdapter()
 
 	m := menu.NewBuilder("test-menu").
 		AddRow(
@@ -34,12 +34,12 @@ func TestMenuAdapterConvertToInlineKeyboard(t *testing.T) {
 		Build()
 
 	// Default menu type is Auto, which converts to InlineKeyboard for Telegram
-	markup, err := adapter.ConvertMenu(m)
+	markup, err := a.ConvertMenu(m)
 	if err != nil {
 		t.Fatalf("ConvertMenu failed: %v", err)
 	}
 
-	kb, ok := markup.(builder.InlineKeyboardMarkup)
+	kb, ok := markup.(adapter.InlineKeyboardMarkup)
 	if !ok {
 		t.Fatalf("Expected InlineKeyboardMarkup, got %T", markup)
 	}
@@ -85,9 +85,9 @@ func TestMenuAdapterConvertToReplyKeyboard(t *testing.T) {
 }
 
 func TestMenuAdapterParseAction(t *testing.T) {
-	adapter := NewMenuAdapter()
+	a := NewMenuAdapter()
 
-	msg := builder.NewMessageBuilder(core.PlatformTelegram).
+	msg := adapter.NewMessageBuilder(core.PlatformTelegram).
 		WithID("msg-1").
 		WithSender("user-1", "", "").
 		WithRecipient("chat-1", "direct", "").
@@ -95,7 +95,7 @@ func TestMenuAdapterParseAction(t *testing.T) {
 		WithMetadata("callback_data", "menu_id:item_id:value").
 		Build()
 
-	action, err := adapter.ParseAction(msg)
+	action, err := a.ParseAction(msg)
 	if err != nil {
 		t.Fatalf("ParseAction failed: %v", err)
 	}
@@ -120,12 +120,13 @@ func TestMenuAdapterParseAction(t *testing.T) {
 func TestMenuAdapterGetKeyboardMarkupForMessage(t *testing.T) {
 	adapter := NewMenuAdapter()
 
-	m := menu.NewBuilder("test-menu", menu.MenuTypeInlineKeyboard).
+	m := menu.NewBuilder("test-menu").
 		AddRow(
 			menu.CallbackItem("btn1", "Button 1", "val1"),
 		).
 		Build()
 
+	// Default type Auto will convert to InlineKeyboard
 	kb, err := adapter.GetKeyboardMarkupForMessage(m)
 	if err != nil {
 		t.Fatalf("GetKeyboardMarkupForMessage failed: %v", err)

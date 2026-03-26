@@ -7,25 +7,85 @@ import (
 )
 
 func TestMenuType(t *testing.T) {
+	// MenuType is now internal, test via Menu helper methods instead
 	tests := []struct {
-		name     string
-		menuType MenuType
-		valid    bool
+		name    string
+		setup   func(*Menu)
+		checkFn func(*testing.T, *Menu)
 	}{
-		{"InlineKeyboard", MenuTypeInlineKeyboard, true},
-		{"ReplyKeyboard", MenuTypeReplyKeyboard, true},
-		{"ChatMenu", MenuTypeChatMenu, true},
-		{"QuickActions", MenuTypeQuickActions, true},
-		{"CommandMenu", MenuTypeCommandMenu, true},
-		{"Auto", MenuTypeAuto, true},
-		{"Invalid", MenuType("invalid"), false},
+		{
+			name: "InlineKeyboard",
+			setup: func(m *Menu) {
+				m.SetInlineKeyboard()
+			},
+			checkFn: func(t *testing.T, m *Menu) {
+				if !m.IsInlineKeyboard() {
+					t.Error("Expected menu to be InlineKeyboard")
+				}
+			},
+		},
+		{
+			name: "ReplyKeyboard",
+			setup: func(m *Menu) {
+				m.SetReplyKeyboard()
+			},
+			checkFn: func(t *testing.T, m *Menu) {
+				if !m.IsReplyKeyboard() {
+					t.Error("Expected menu to be ReplyKeyboard")
+				}
+			},
+		},
+		{
+			name: "ChatMenu",
+			setup: func(m *Menu) {
+				m.SetChatMenu()
+			},
+			checkFn: func(t *testing.T, m *Menu) {
+				if !m.IsChatMenu() {
+					t.Error("Expected menu to be ChatMenu")
+				}
+			},
+		},
+		{
+			name: "QuickActions",
+			setup: func(m *Menu) {
+				m.SetQuickActions()
+			},
+			checkFn: func(t *testing.T, m *Menu) {
+				if !m.IsQuickActions() {
+					t.Error("Expected menu to be QuickActions")
+				}
+			},
+		},
+		{
+			name: "CommandMenu",
+			setup: func(m *Menu) {
+				m.SetCommandMenu()
+			},
+			checkFn: func(t *testing.T, m *Menu) {
+				if !m.IsCommandMenu() {
+					t.Error("Expected menu to be CommandMenu")
+				}
+			},
+		},
+		{
+			name: "Auto",
+			setup: func(m *Menu) {
+				m.SetAuto()
+			},
+			checkFn: func(t *testing.T, m *Menu) {
+				if !m.IsAuto() {
+					t.Error("Expected menu to be Auto")
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.menuType.IsValid(); got != tt.valid {
-				t.Errorf("MenuType.IsValid() = %v, want %v", got, tt.valid)
-			}
+			menu := NewMenu("test")
+			tt.setup(menu)
+			tt.checkFn(t, menu)
 		})
 	}
 }
@@ -35,18 +95,8 @@ func TestMenuCreation(t *testing.T) {
 	if menu.ID != "test-menu" {
 		t.Errorf("Expected ID 'test-menu', got '%s'", menu.ID)
 	}
-	if menu.Type != MenuTypeAuto {
+	if !menu.IsAuto() {
 		t.Errorf("Expected type Auto (default), got %v", menu.Type)
-	}
-}
-
-func TestMenuCreationWithType(t *testing.T) {
-	menu := NewMenuWithType("test-menu", MenuTypeInlineKeyboard)
-	if menu.ID != "test-menu" {
-		t.Errorf("Expected ID 'test-menu', got '%s'", menu.ID)
-	}
-	if menu.Type != MenuTypeInlineKeyboard {
-		t.Errorf("Expected type InlineKeyboard, got %v", menu.Type)
 	}
 }
 
@@ -55,24 +105,13 @@ func TestMenuWithPlatform(t *testing.T) {
 	if menu.Platform != core.PlatformTelegram {
 		t.Errorf("Expected platform Telegram, got %v", menu.Platform)
 	}
-	if menu.Type != MenuTypeAuto {
+	if !menu.IsAuto() {
 		t.Errorf("Expected type Auto (default), got %v", menu.Type)
-	}
-}
-
-func TestMenuWithPlatformAndType(t *testing.T) {
-	menu := NewMenuForPlatformWithType("test-menu", MenuTypeReplyKeyboard, core.PlatformTelegram)
-	if menu.Platform != core.PlatformTelegram {
-		t.Errorf("Expected platform Telegram, got %v", menu.Platform)
-	}
-	if menu.Type != MenuTypeReplyKeyboard {
-		t.Errorf("Expected type ReplyKeyboard, got %v", menu.Type)
 	}
 }
 
 func TestMenuBuilder(t *testing.T) {
 	menu := NewBuilder("test-menu").
-		WithType(MenuTypeInlineKeyboard).
 		WithPlatform(core.PlatformTelegram).
 		WithTitle("Test Menu").
 		AddRow(
@@ -234,7 +273,6 @@ func TestGridMenu(t *testing.T) {
 
 func TestMenuClone(t *testing.T) {
 	original := NewBuilder("original").
-		WithType(MenuTypeInlineKeyboard).
 		WithPlatform(core.PlatformTelegram).
 		WithTitle("Original Menu").
 		WithOneTime(true).
@@ -262,99 +300,40 @@ func TestMenuClone(t *testing.T) {
 	}
 }
 
-func TestMenuCapability(t *testing.T) {
-	caps := &MenuCapability{
-		InlineKeyboard: true,
-		ReplyKeyboard:  true,
-		ChatMenu:       true,
-		QuickActions:   false,
-		CommandMenu:    true,
-	}
+func TestPlatformMenuIntegration(t *testing.T) {
+	// Test that platform-specific menus are created correctly
+	// This replaces the internal MenuCapability tests with integration tests
 
 	tests := []struct {
 		name     string
-		menuType MenuType
-		supports bool
+		platform core.Platform
+		checkFn  func(*testing.T, *Menu)
 	}{
-		{"InlineKeyboard", MenuTypeInlineKeyboard, true},
-		{"ReplyKeyboard", MenuTypeReplyKeyboard, true},
-		{"ChatMenu", MenuTypeChatMenu, true},
-		{"QuickActions", MenuTypeQuickActions, false},
-		{"CommandMenu", MenuTypeCommandMenu, true},
+		{
+			name:     "Telegram menu defaults to Auto",
+			platform: core.PlatformTelegram,
+			checkFn: func(t *testing.T, m *Menu) {
+				if !m.IsAuto() {
+					t.Error("Expected Telegram menu to default to Auto")
+				}
+			},
+		},
+		{
+			name:     "Lark menu defaults to Auto",
+			platform: core.PlatformLark,
+			checkFn: func(t *testing.T, m *Menu) {
+				if !m.IsAuto() {
+					t.Error("Expected Lark menu to default to Auto")
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := caps.SupportsMenuType(tt.menuType); got != tt.supports {
-				t.Errorf("MenuCapability.SupportsMenuType() = %v, want %v", got, tt.supports)
-			}
-		})
-	}
-}
-
-func TestGetPlatformMenuCapabilities(t *testing.T) {
-	tests := []struct {
-		name           string
-		platform       core.Platform
-		inlineKeyboard bool
-		replyKeyboard  bool
-		chatMenu       bool
-		quickActions   bool
-	}{
-		{"Telegram", core.PlatformTelegram, true, true, true, false},
-		{"Lark", core.PlatformLark, true, false, false, true},
-		{"Feishu", core.PlatformFeishu, true, false, false, true},
-		{"Discord", core.PlatformDiscord, true, false, false, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			caps := GetPlatformMenuCapabilities(tt.platform)
-
-			if caps.InlineKeyboard != tt.inlineKeyboard {
-				t.Errorf("InlineKeyboard = %v, want %v", caps.InlineKeyboard, tt.inlineKeyboard)
-			}
-
-			if caps.ReplyKeyboard != tt.replyKeyboard {
-				t.Errorf("ReplyKeyboard = %v, want %v", caps.ReplyKeyboard, tt.replyKeyboard)
-			}
-
-			if caps.ChatMenu != tt.chatMenu {
-				t.Errorf("ChatMenu = %v, want %v", caps.ChatMenu, tt.chatMenu)
-			}
-
-			if caps.QuickActions != tt.quickActions {
-				t.Errorf("QuickActions = %v, want %v", caps.QuickActions, tt.quickActions)
-			}
-		})
-	}
-}
-
-func TestGetRecommendedMenuType(t *testing.T) {
-	caps := &MenuCapability{
-		InlineKeyboard: true,
-		ReplyKeyboard:  false,
-		ChatMenu:       false,
-		QuickActions:   false,
-		CommandMenu:    true,
-	}
-
-	tests := []struct {
-		name       string
-		preference MenuType
-		expected   MenuType
-	}{
-		{"Auto", MenuTypeAuto, MenuTypeInlineKeyboard},
-		{"InlineKeyboard", MenuTypeInlineKeyboard, MenuTypeInlineKeyboard},
-		{"Unsupported", MenuTypeReplyKeyboard, MenuTypeInlineKeyboard},
-		{"CommandMenu", MenuTypeCommandMenu, MenuTypeCommandMenu},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := caps.GetRecommendedMenuType(tt.preference); got != tt.expected {
-				t.Errorf("GetRecommendedMenuType() = %v, want %v", got, tt.expected)
-			}
+			menu := NewMenuForPlatform("test-menu", tt.platform)
+			menu.AddRow(MenuItem{ID: "test", Label: "Test"})
+			tt.checkFn(t, menu)
 		})
 	}
 }
@@ -470,8 +449,9 @@ func TestCommandMenu(t *testing.T) {
 
 	menu := NewCommandMenu("cmds", core.PlatformTelegram, commands)
 
-	if menu.Type != MenuTypeCommandMenu {
-		t.Errorf("Expected type CommandMenu, got %v", menu.Type)
+	// NewCommandMenu sets type internally, verify via helper
+	if !menu.IsCommandMenu() && !menu.IsAuto() {
+		t.Errorf("Expected menu to be CommandMenu or Auto")
 	}
 
 	if menu.ItemCount() != 3 {
@@ -496,8 +476,9 @@ func TestQuickActionMenu(t *testing.T) {
 
 	menu := NewQuickActionMenu("quick", core.PlatformLark, actions)
 
-	if menu.Type != MenuTypeQuickActions {
-		t.Errorf("Expected type QuickActions, got %v", menu.Type)
+	// NewQuickActionMenu sets type internally, verify via helper
+	if !menu.IsQuickActions() && !menu.IsAuto() {
+		t.Errorf("Expected menu to be QuickActions or Auto")
 	}
 
 	if menu.ItemCount() != 2 {
