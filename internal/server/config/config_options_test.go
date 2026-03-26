@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestNewConfigWithSkipMigration(t *testing.T) {
+func TestNewConfigWithDisableMigration(t *testing.T) {
 	// Create a temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "tingly-config-test-*")
 	if err != nil {
@@ -14,7 +14,7 @@ func TestNewConfigWithSkipMigration(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Test 1: Create config without skip migration (default)
+	// Test 1: Create config without disable migration (default, migration enabled)
 	cfg1, err := NewConfig(WithConfigDir(tempDir))
 	if err != nil {
 		t.Fatalf("Failed to create config: %v", err)
@@ -29,10 +29,10 @@ func TestNewConfigWithSkipMigration(t *testing.T) {
 		t.Fatalf("Failed to remove config file: %v", err)
 	}
 
-	// Test 2: Create config with skip migration
-	cfg2, err := NewConfig(WithConfigDir(tempDir), WithSkipMigration())
+	// Test 2: Create config with disable migration
+	cfg2, err := NewConfig(WithConfigDir(tempDir), WithDisableMigration())
 	if err != nil {
-		t.Fatalf("Failed to create config with skip migration: %v", err)
+		t.Fatalf("Failed to create config with disable migration: %v", err)
 	}
 	if cfg2 == nil {
 		t.Fatal("Expected config to be non-nil")
@@ -70,10 +70,10 @@ func TestNewConfigWithDir(t *testing.T) {
 		t.Fatalf("Failed to remove config file: %v", err)
 	}
 
-	// Test NewConfigWithDir with skip migration
-	cfg2, err := NewConfigWithDir(tempDir, WithSkipMigration())
+	// Test NewConfigWithDir with disable migration
+	cfg2, err := NewConfigWithDir(tempDir, WithDisableMigration())
 	if err != nil {
-		t.Fatalf("Failed to create config with skip migration: %v", err)
+		t.Fatalf("Failed to create config with disable migration: %v", err)
 	}
 	if cfg2 == nil {
 		t.Fatal("Expected config to be non-nil")
@@ -85,20 +85,32 @@ func TestNewConfigWithDir(t *testing.T) {
 
 func TestConfigOptions(t *testing.T) {
 	// Test that the options pattern works correctly
-	opts := &configOptions{}
+	opts := &configOptions{
+		enableMigration: true,
+		enableBuiltIn:   true,
+	}
 
-	// Default should be false and empty string
-	if opts.skipMigration {
-		t.Error("Expected skipMigration to default to false")
+	// Default should be true
+	if !opts.enableMigration {
+		t.Error("Expected enableMigration to default to true")
+	}
+	if !opts.enableBuiltIn {
+		t.Error("Expected enableBuiltIn to default to true")
 	}
 	if opts.configDir != "" {
 		t.Error("Expected configDir to default to empty string")
 	}
 
-	// Apply WithSkipMigration option
-	WithSkipMigration()(opts)
-	if !opts.skipMigration {
-		t.Error("Expected skipMigration to be true after applying WithSkipMigration")
+	// Apply WithDisableMigration option
+	WithDisableMigration()(opts)
+	if opts.enableMigration {
+		t.Error("Expected enableMigration to be false after applying WithDisableMigration")
+	}
+
+	// Apply WithDisableBuiltIn option
+	WithDisableBuiltIn()(opts)
+	if opts.enableBuiltIn {
+		t.Error("Expected enableBuiltIn to be false after applying WithDisableBuiltIn")
 	}
 
 	// Apply WithConfigDir option
