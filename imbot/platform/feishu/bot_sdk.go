@@ -15,7 +15,6 @@ import (
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 	"github.com/tingly-dev/tingly-box/imbot/interaction"
 
-	"github.com/tingly-dev/tingly-box/imbot/adapter"
 	"github.com/tingly-dev/tingly-box/imbot/core"
 )
 
@@ -234,7 +233,7 @@ func (b *Bot) convertLarkMessageToCore(event *larkim.P2MessageReceiveV1) *core.M
 	if event == nil {
 		b.Logger().Error("convertLarkMessageToCore: event is nil")
 		// Return a dummy error message
-		return adapter.NewMessageBuilder(core.Platform(b.domain)).
+		return core.NewMessageBuilder(core.Platform(b.domain)).
 			WithID("error").
 			WithTimestamp(time.Now().Unix()).
 			WithSender("system", "", "").
@@ -327,7 +326,7 @@ func (b *Bot) convertLarkMessageToCore(event *larkim.P2MessageReceiveV1) *core.M
 
 	// Build core.Message using the builder
 	// For direct messages, Recipient.ID should be the user_id (not chat_id) for sending replies
-	messageBuilder := adapter.NewMessageBuilder(core.Platform(b.domain)).
+	messageBuilder := core.NewMessageBuilder(core.Platform(b.domain)).
 		WithID(messageID).
 		WithTimestamp(time.Now().Unix()).
 		WithSender(senderID, "", "").

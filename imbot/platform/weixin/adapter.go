@@ -42,7 +42,7 @@ func (a *Adapter) AdaptMessage(ctx context.Context, msg *channel.Message) (*core
 	messageState, _ := msg.Metadata["message_state"].(int)
 
 	// Build message using fluent builder
-	messageBuilder := adapter.NewMessageBuilder(core.PlatformWeixin).
+	messageBuilder := core.NewMessageBuilder(core.PlatformWeixin).
 		WithID(msg.MessageID).
 		WithTimestamp(msg.Timestamp.Unix()).
 		WithRecipient(msg.To, string(msg.ChatType), "").

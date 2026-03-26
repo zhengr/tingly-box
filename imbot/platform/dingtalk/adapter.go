@@ -37,7 +37,7 @@ func (a *Adapter) AdaptChatBotMessage(ctx context.Context, data *chatbot.BotCall
 	chatType := a.getChatType(data.ConversationType)
 
 	// Build message using fluent builder
-	messageBuilder := adapter.NewMessageBuilder(core.PlatformDingTalk).
+	messageBuilder := core.NewMessageBuilder(core.PlatformDingTalk).
 		WithID(data.MsgId).
 		WithTimestamp(time.Now().Unix()).
 		WithRecipient(data.ConversationId, string(chatType), data.ConversationTitle).
@@ -56,7 +56,7 @@ func (a *Adapter) AdaptChatBotMessage(ctx context.Context, data *chatbot.BotCall
 func (a *Adapter) AdaptIncomingMessage(ctx context.Context, conversationID, senderID, senderNick, text string, timestamp int64) (*core.Message, error) {
 	chatType := core.ChatTypeDirect // Default to direct for 1:1 messages
 
-	messageBuilder := adapter.NewMessageBuilder(core.PlatformDingTalk).
+	messageBuilder := core.NewMessageBuilder(core.PlatformDingTalk).
 		WithID(fmt.Sprintf("incoming_%d", timestamp)).
 		WithTimestamp(timestamp).
 		WithRecipient(conversationID, string(chatType), "").

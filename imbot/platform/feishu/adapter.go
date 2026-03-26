@@ -48,7 +48,7 @@ func (a *Adapter) AdaptMessage(ctx context.Context, event MessageEventDetail) (*
 	chatType := a.getChatType(event.ChatType)
 
 	// Build message using fluent builder
-	messageBuilder := adapter.NewMessageBuilder(core.PlatformFeishu).
+	messageBuilder := core.NewMessageBuilder(core.PlatformFeishu).
 		WithID(event.MessageID).
 		WithTimestamp(parseFeishuTimestamp(event.CreateTime)).
 		WithRecipient(event.ChatID, string(chatType), "").

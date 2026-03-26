@@ -3,7 +3,6 @@ package feishu
 import (
 	"testing"
 
-	"github.com/tingly-dev/tingly-box/imbot/adapter"
 	"github.com/tingly-dev/tingly-box/imbot/core"
 	"github.com/tingly-dev/tingly-box/imbot/menu"
 )
@@ -90,7 +89,7 @@ func TestMenuAdapterParseAction(t *testing.T) {
 	a := NewMenuAdapter()
 
 	// Test with callback data in metadata
-	msg := adapter.NewMessageBuilder(core.PlatformFeishu).
+	msg := core.NewMessageBuilder(core.PlatformFeishu).
 		WithID("msg-1").
 		WithSender("user-1", "", "").
 		WithRecipient("chat-1", "direct", "").

@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/tingly-dev/tingly-box/imbot/adapter"
 	"github.com/tingly-dev/tingly-box/imbot/core"
 )
 
@@ -442,7 +441,7 @@ func TestDefaultAdapterParseAction(t *testing.T) {
 	a := NewDefaultAdapter(core.PlatformDiscord)
 
 	// Test text-based menu selection
-	msg := adapter.NewMessageBuilder(core.PlatformDiscord).
+	msg := core.NewMessageBuilder(core.PlatformDiscord).
 		WithID("msg-1").
 		WithSender("user-1", "", "").
 		WithRecipient("chat-1", "direct", "").

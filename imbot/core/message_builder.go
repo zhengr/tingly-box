@@ -1,20 +1,16 @@
-package adapter
-
-import (
-	"github.com/tingly-dev/tingly-box/imbot/core"
-)
+package core
 
 // MessageBuilder builds core.Message with a fluent API
 type MessageBuilder struct {
-	platform core.Platform
-	msg      core.Message
+	platform Platform
+	msg      Message
 }
 
 // NewMessageBuilder creates a new message builder for the given platform
-func NewMessageBuilder(platform core.Platform) *MessageBuilder {
+func NewMessageBuilder(platform Platform) *MessageBuilder {
 	return &MessageBuilder{
 		platform: platform,
-		msg: core.Message{
+		msg: Message{
 			Platform: platform,
 			Metadata: make(map[string]interface{}),
 		},
@@ -23,7 +19,7 @@ func NewMessageBuilder(platform core.Platform) *MessageBuilder {
 
 // WithSender sets the sender information
 func (b *MessageBuilder) WithSender(id, username, displayName string) *MessageBuilder {
-	b.msg.Sender = core.Sender{
+	b.msg.Sender = Sender{
 		ID:          id,
 		Username:    username,
 		DisplayName: displayName,
@@ -33,7 +29,7 @@ func (b *MessageBuilder) WithSender(id, username, displayName string) *MessageBu
 }
 
 // WithSenderFrom sets the sender from a core.Sender
-func (b *MessageBuilder) WithSenderFrom(sender core.Sender) *MessageBuilder {
+func (b *MessageBuilder) WithSenderFrom(sender Sender) *MessageBuilder {
 	b.msg.Sender = sender
 	if sender.Raw == nil {
 		b.msg.Sender.Raw = make(map[string]interface{})
@@ -43,54 +39,54 @@ func (b *MessageBuilder) WithSenderFrom(sender core.Sender) *MessageBuilder {
 
 // WithRecipient sets the recipient information
 func (b *MessageBuilder) WithRecipient(id, chatType, displayName string) *MessageBuilder {
-	b.msg.Recipient = core.Recipient{
+	b.msg.Recipient = Recipient{
 		ID:          id,
 		Type:        chatType,
 		DisplayName: displayName,
 	}
-	b.msg.ChatType = core.ChatType(chatType)
+	b.msg.ChatType = ChatType(chatType)
 	return b
 }
 
 // WithRecipientFrom sets the recipient from a core.Recipient
-func (b *MessageBuilder) WithRecipientFrom(recipient core.Recipient) *MessageBuilder {
+func (b *MessageBuilder) WithRecipientFrom(recipient Recipient) *MessageBuilder {
 	b.msg.Recipient = recipient
-	b.msg.ChatType = core.ChatType(recipient.Type)
+	b.msg.ChatType = ChatType(recipient.Type)
 	return b
 }
 
 // WithTextContent sets text content
-func (b *MessageBuilder) WithTextContent(text string, entities []core.Entity) *MessageBuilder {
-	b.msg.Content = core.NewTextContent(text, entities...)
+func (b *MessageBuilder) WithTextContent(text string, entities []Entity) *MessageBuilder {
+	b.msg.Content = NewTextContent(text, entities...)
 	return b
 }
 
 // WithMediaContent sets media content
-func (b *MessageBuilder) WithMediaContent(media []core.MediaAttachment, caption string) *MessageBuilder {
-	b.msg.Content = core.NewMediaContent(media, caption)
+func (b *MessageBuilder) WithMediaContent(media []MediaAttachment, caption string) *MessageBuilder {
+	b.msg.Content = NewMediaContent(media, caption)
 	return b
 }
 
 // WithPollContent sets poll content
-func (b *MessageBuilder) WithPollContent(poll core.Poll) *MessageBuilder {
-	b.msg.Content = core.NewPollContent(poll)
+func (b *MessageBuilder) WithPollContent(poll Poll) *MessageBuilder {
+	b.msg.Content = NewPollContent(poll)
 	return b
 }
 
 // WithReactionContent sets reaction content
-func (b *MessageBuilder) WithReactionContent(reaction core.Reaction) *MessageBuilder {
-	b.msg.Content = core.NewReactionContent(reaction)
+func (b *MessageBuilder) WithReactionContent(reaction Reaction) *MessageBuilder {
+	b.msg.Content = NewReactionContent(reaction)
 	return b
 }
 
 // WithSystemContent sets system content
 func (b *MessageBuilder) WithSystemContent(eventType string, data map[string]interface{}) *MessageBuilder {
-	b.msg.Content = core.NewSystemContent(eventType, data)
+	b.msg.Content = NewSystemContent(eventType, data)
 	return b
 }
 
 // WithContent sets content directly
-func (b *MessageBuilder) WithContent(content core.Content) *MessageBuilder {
+func (b *MessageBuilder) WithContent(content Content) *MessageBuilder {
 	b.msg.Content = content
 	return b
 }
@@ -103,7 +99,7 @@ func (b *MessageBuilder) WithTimestamp(ts int64) *MessageBuilder {
 
 // WithReplyTo sets the message as a reply to another message
 func (b *MessageBuilder) WithReplyTo(messageID, parentMessageID string) *MessageBuilder {
-	b.msg.ThreadContext = &core.ThreadContext{
+	b.msg.ThreadContext = &ThreadContext{
 		ID:              messageID,
 		ParentMessageID: parentMessageID,
 	}
@@ -111,7 +107,7 @@ func (b *MessageBuilder) WithReplyTo(messageID, parentMessageID string) *Message
 }
 
 // WithThreadContext sets the thread context
-func (b *MessageBuilder) WithThreadContext(thread *core.ThreadContext) *MessageBuilder {
+func (b *MessageBuilder) WithThreadContext(thread *ThreadContext) *MessageBuilder {
 	b.msg.ThreadContext = thread
 	return b
 }
@@ -143,7 +139,7 @@ func (b *MessageBuilder) WithRawMetadata(key string, value interface{}) *Message
 }
 
 // Build returns the constructed message
-func (b *MessageBuilder) Build() *core.Message {
+func (b *MessageBuilder) Build() *Message {
 	// Validate required fields
 	if b.msg.ID == "" {
 		// ID is optional for incoming messages (can be set by platform)
@@ -158,14 +154,14 @@ func (b *MessageBuilder) Build() *core.Message {
 	}
 	if b.msg.Content == nil {
 		// Content is required
-		b.msg.Content = core.NewSystemContent("empty", nil)
+		b.msg.Content = NewSystemContent("empty", nil)
 	}
 
 	return &b.msg
 }
 
 // MustBuild returns the constructed message or panics if validation fails
-func (b *MessageBuilder) MustBuild() *core.Message {
+func (b *MessageBuilder) MustBuild() *Message {
 	msg := b.Build()
 	if msg == nil {
 		panic("message builder: build failed")

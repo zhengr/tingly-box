@@ -3,7 +3,6 @@ package telegram
 import (
 	"testing"
 
-	"github.com/tingly-dev/tingly-box/imbot/adapter"
 	"github.com/tingly-dev/tingly-box/imbot/core"
 	"github.com/tingly-dev/tingly-box/imbot/interaction"
 	"github.com/tingly-dev/tingly-box/imbot/menu"
@@ -88,7 +87,7 @@ func TestMenuAdapterConvertToReplyKeyboard(t *testing.T) {
 func TestMenuAdapterParseAction(t *testing.T) {
 	a := NewMenuAdapter()
 
-	msg := adapter.NewMessageBuilder(core.PlatformTelegram).
+	msg := core.NewMessageBuilder(core.PlatformTelegram).
 		WithID("msg-1").
 		WithSender("user-1", "", "").
 		WithRecipient("chat-1", "direct", "").

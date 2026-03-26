@@ -46,7 +46,7 @@ func (a *Adapter) AdaptMessage(ctx context.Context, m *discordgo.MessageCreate) 
 	chatType := a.getChatType(msg.ChannelID)
 
 	// Build message using fluent builder
-	messageBuilder := adapter.NewMessageBuilder(core.PlatformDiscord).
+	messageBuilder := core.NewMessageBuilder(core.PlatformDiscord).
 		WithID(msg.ID).
 		WithTimestamp(msg.Timestamp.Unix()).
 		WithRecipient(msg.ChannelID, string(chatType), a.getChannelName(msg.ChannelID)).
@@ -79,7 +79,7 @@ func (a *Adapter) AdaptReaction(ctx context.Context, emoji *discordgo.MessageRea
 	channelID := emoji.ChannelID
 	messageID := emoji.MessageID
 
-	messageBuilder := adapter.NewMessageBuilder(core.PlatformDiscord).
+	messageBuilder := core.NewMessageBuilder(core.PlatformDiscord).
 		WithID(messageID).
 		WithTimestamp(time.Now().Unix()).
 		WithRecipient(channelID, "direct", "").

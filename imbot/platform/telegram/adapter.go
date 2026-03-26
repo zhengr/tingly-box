@@ -42,7 +42,7 @@ func (a *Adapter) AdaptMessage(ctx context.Context, msg *models.Message) (*core.
 	chatType := a.getChatType(&msg.Chat)
 
 	// Build message using fluent builder
-	messageBuilder := adapter.NewMessageBuilder(core.PlatformTelegram).
+	messageBuilder := core.NewMessageBuilder(core.PlatformTelegram).
 		WithID(strconv.Itoa(msg.ID)).
 		WithTimestamp(int64(msg.Date)).
 		WithRecipient(strconv.FormatInt(msg.Chat.ID, 10), string(chatType), msg.Chat.Title).
@@ -97,7 +97,7 @@ func (a *Adapter) AdaptCallback(ctx context.Context, query *models.CallbackQuery
 		callbackText = textContent + "\n\n" + callbackText
 	}
 
-	messageBuilder := adapter.NewMessageBuilder(core.PlatformTelegram).
+	messageBuilder := core.NewMessageBuilder(core.PlatformTelegram).
 		WithTimestamp(time.Now().Unix()).
 		WithSenderFrom(a.extractSender(&query.From))
 
