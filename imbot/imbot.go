@@ -2,13 +2,13 @@
 package imbot
 
 import (
-	"github.com/tingly-dev/tingly-box/imbot/internal/builder"
-	"github.com/tingly-dev/tingly-box/imbot/internal/command"
-	"github.com/tingly-dev/tingly-box/imbot/internal/core"
-	"github.com/tingly-dev/tingly-box/imbot/internal/interaction"
-	"github.com/tingly-dev/tingly-box/imbot/internal/menu"
-	"github.com/tingly-dev/tingly-box/imbot/internal/platform/feishu"
-	"github.com/tingly-dev/tingly-box/imbot/internal/platform/telegram"
+	"github.com/tingly-dev/tingly-box/imbot/builder"
+	"github.com/tingly-dev/tingly-box/imbot/command"
+	"github.com/tingly-dev/tingly-box/imbot/core"
+	"github.com/tingly-dev/tingly-box/imbot/interaction"
+	"github.com/tingly-dev/tingly-box/imbot/menu"
+	"github.com/tingly-dev/tingly-box/imbot/platform/feishu"
+	"github.com/tingly-dev/tingly-box/imbot/platform/telegram"
 )
 
 // TelegramBot is an interface for Telegram-specific bot operations
