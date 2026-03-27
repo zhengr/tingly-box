@@ -19,13 +19,14 @@ func shouldIncludeRuleInModelList(requestedScenario typ.RuleScenario, ruleScenar
 	if requestedScenario == ruleScenario {
 		return true
 	}
-
-	switch requestedScenario {
-	case typ.ScenarioOpenAI:
-		return scenarioSupportsTransport(ruleScenario, typ.TransportOpenAI)
-	case typ.ScenarioAnthropic:
-		return scenarioSupportsTransport(ruleScenario, typ.TransportAnthropic)
-	default:
+	requestedDescriptor, ok := typ.GetScenarioDescriptor(requestedScenario)
+	if !ok {
 		return false
 	}
+	for _, transport := range requestedDescriptor.SupportedTransport {
+		if scenarioSupportsTransport(ruleScenario, transport) {
+			return true
+		}
+	}
+	return false
 }
