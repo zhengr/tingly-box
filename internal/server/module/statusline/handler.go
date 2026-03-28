@@ -121,12 +121,40 @@ func (h *Handler) GetClaudeCodeStatusLine(c *gin.Context) {
 		bar += "░"
 	}
 
-	// Build output
-	output := fmt.Sprintf("[%s]", ccModel)
+	// Build profile label: "p1:name" or empty
+	profileLabel := ""
+	base, profileID := typ.ParseScenarioProfile(typ.RuleScenario(scenario))
+	if profileID != "" {
+		profileName := profileID
+		if meta, ok := h.config.GetProfile(base, profileID); ok {
+			profileName = profileID + ":" + meta.Name
+		}
+		profileLabel = profileName
+	}
 
-	// Query Tingly Box model mapping and add info if available
-	if mapping := h.getTBModelMapping(merged.Model.ID, typ.RuleScenario(scenario)); mapping != nil && mapping.model != "" {
-		output += fmt.Sprintf(" → %s @ %s", mapping.model, mapping.providerName)
+	// Query Tingly Box model mapping
+	mapping := h.getTBModelMapping(merged.Model.ID, typ.RuleScenario(scenario))
+
+	// Build output: [ruleModel @ p1:name] -> realModel @ providerName
+	ruleModel := merged.Model.ID
+	if ruleModel == "" {
+		ruleModel = ccModel
+	}
+
+	if profileLabel != "" {
+		output := fmt.Sprintf("[%s @ %s]", ruleModel, profileLabel)
+		if mapping != nil && mapping.model != "" {
+			output += fmt.Sprintf(" → %s @ %s", mapping.model, mapping.providerName)
+		}
+		output += fmt.Sprintf(" | %s %d%% | $%.2f", bar, usedPct, cost)
+		c.String(http.StatusOK, output)
+		return
+	}
+
+	// Non-profile: [ruleModel] -> realModel @ providerName
+	output := fmt.Sprintf("[%s]", ruleModel)
+	if mapping != nil && mapping.model != "" {
+		output += fmt.Sprintf(" -> %s @ %s", mapping.model, mapping.providerName)
 	}
 
 	// Add context bar and cost

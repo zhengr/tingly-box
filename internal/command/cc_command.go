@@ -143,7 +143,7 @@ func runCC(appManager *AppManager, profile string, unified bool, claudeArgs []st
 	if profileID != "" {
 		// Profile mode: copy user's settings.json to ~/.tingly-box/claude/<profileID>.json
 		// then merge the env section with tingly-box routing vars.
-		settingsPath, err = buildProfileSettings(profileID, env)
+		settingsPath, err = buildProfileSettings(profileID, env, scenarioPath)
 	} else {
 		// Default mode: create a temp settings file with only env vars.
 		settingsPath, err = buildTempSettings(env)
@@ -176,8 +176,8 @@ func runCC(appManager *AppManager, profile string, unified bool, claudeArgs []st
 
 // buildProfileSettings copies the user's ~/.claude/settings.json to
 // ~/.tingly-box/claude/<profileID>.json, then applies (merges) the tingly-box
-// env vars into it using the same apply logic as the web UI.
-func buildProfileSettings(profileID string, env map[string]string) (string, error) {
+// env vars and status line config into it.
+func buildProfileSettings(profileID string, env map[string]string, scenarioPath string) (string, error) {
 	profileDir := filepath.Join(constant.GetTinglyConfDir(), "claude")
 	destPath := filepath.Join(profileDir, profileID+".json")
 
@@ -202,8 +202,23 @@ func buildProfileSettings(profileID string, env map[string]string) (string, erro
 	}
 	// If file doesn't exist, destPath may not exist yet — ApplyClaudeSettingsToPath will create it
 
-	// Apply tingly-box env vars (merge into the copied settings)
-	result, err := config.ApplyClaudeSettingsToPath(destPath, env)
+	// Install the base status line script (shared across profiles)
+	if _, _, err := config.InstallStatusLineScript(); err != nil {
+		return "", fmt.Errorf("failed to install status line script: %w", err)
+	}
+
+	// Generate a per-profile wrapper script that sets TINGLY_SCENARIO
+	wrapperPath, err := buildProfileStatusLineScript(profileDir, profileID, scenarioPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to create status line wrapper: %w", err)
+	}
+
+	// Apply tingly-box env vars + statusLine config
+	statusLine := map[string]any{
+		"type":    "command",
+		"command": wrapperPath,
+	}
+	result, err := config.ApplyClaudeSettingsToPath(destPath, env, config.KV{Key: "statusLine", Value: statusLine})
 	if err != nil {
 		return "", fmt.Errorf("failed to apply settings: %w", err)
 	}
@@ -212,6 +227,25 @@ func buildProfileSettings(profileID string, env map[string]string) (string, erro
 	}
 
 	return destPath, nil
+}
+
+// buildProfileStatusLineScript creates a per-profile wrapper script that sets
+// TINGLY_SCENARIO before invoking the base tingly-statusline.sh.
+func buildProfileStatusLineScript(profileDir, profileID, scenarioPath string) (string, error) {
+	wrapperPath := filepath.Join(profileDir, fmt.Sprintf("statusline-%s.sh", profileID))
+
+	wrapper := fmt.Sprintf(`#!/bin/bash
+# Per-profile status line wrapper for Claude Code
+# Profile: %s → %s
+export TINGLY_SCENARIO="%s"
+exec ~/.claude/tingly-statusline.sh "$@"
+`, profileID, scenarioPath, scenarioPath)
+
+	if err := os.WriteFile(wrapperPath, []byte(wrapper), 0755); err != nil {
+		return "", fmt.Errorf("failed to write wrapper script: %w", err)
+	}
+
+	return wrapperPath, nil
 }
 
 // buildTempSettings creates a temporary settings file containing only the env vars.
