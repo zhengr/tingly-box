@@ -1,0 +1,212 @@
+package command
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+
+	"github.com/spf13/cobra"
+	"github.com/tingly-dev/tingly-box/agentboot/claude"
+	"github.com/tingly-dev/tingly-box/internal/typ"
+)
+
+// CCCommand creates the `cc` subcommand that configures and launches Claude Code.
+func CCCommand(appManager *AppManager) *cobra.Command {
+	var profile string
+	var unified bool
+
+	cmd := &cobra.Command{
+		Use:   "cc",
+		Short: "Launch Claude Code with tingly-box routing",
+		Long: `Launch Claude Code with tingly-box as the API proxy.
+
+A temporary settings file is created and passed to Claude Code via --settings,
+so the existing Claude Code configuration is not modified.
+
+Profiles can be used to switch between different rule sets for the same scenario.`,
+		DisableFlagParsing: true,
+		Args:              cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Re-parse flags: everything before "--" belongs to tingly-box,
+			// everything after is passthrough to claude.
+			var tinglyArgs, claudeArgs []string
+			seenDashDash := false
+			for _, arg := range args {
+				if arg == "--" {
+					seenDashDash = true
+					continue
+				}
+				if seenDashDash {
+					claudeArgs = append(claudeArgs, arg)
+				} else {
+					tinglyArgs = append(tinglyArgs, arg)
+				}
+			}
+
+			// Parse tingly-box flags from tinglyArgs
+			parsedProfile, parsedUnified, remaining, err := parseCCFlags(tinglyArgs)
+			if err != nil {
+				return err
+			}
+			// Explicit flags override defaults
+			if profile == "" && parsedProfile != "" {
+				profile = parsedProfile
+			}
+			if !cmd.Flags().Changed("unified") && parsedUnified != nil {
+				unified = *parsedUnified
+			}
+			// Remaining tingly args that aren't our flags → treat as claude args
+			claudeArgs = append(remaining, claudeArgs...)
+
+			return runCC(appManager, profile, unified, claudeArgs)
+		},
+	}
+
+	cmd.Flags().StringVar(&profile, "profile", "", "Profile ID or name (e.g., p1, Premium)")
+	cmd.Flags().BoolVar(&unified, "unified", true, "Unified mode (all models point to same rule)")
+
+	return cmd
+}
+
+// parseCCFlags extracts known tingly-box flags from args.
+// Returns parsed profile, unified, and remaining unknown args.
+func parseCCFlags(args []string) (profile string, unified *bool, remaining []string, err error) {
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--profile" || args[i] == "-p":
+			if i+1 >= len(args) {
+				return "", nil, nil, fmt.Errorf("flag %s requires a value", args[i])
+			}
+			profile = args[i+1]
+			i++ // skip next
+
+		case args[i] == "--unified":
+			v := true
+			unified = &v
+
+		case args[i] == "--no-unified":
+			v := false
+			unified = &v
+
+		default:
+			// Unknown flag → passthrough to claude
+			remaining = append(remaining, args[i])
+		}
+	}
+	return profile, unified, remaining, nil
+}
+
+// runCC orchestrates: ensure server → resolve profile → write temp settings → exec claude.
+func runCC(appManager *AppManager, profile string, unified bool, claudeArgs []string) error {
+	globalConfig := appManager.GetGlobalConfig()
+	scenario := typ.ScenarioClaudeCode
+
+	// Resolve profile if specified
+	var profileID string
+	if profile != "" {
+		resolved, err := globalConfig.ResolveProfileNameOrID(scenario, profile)
+		if err != nil {
+			return fmt.Errorf("profile error: %w", err)
+		}
+		profileID = resolved
+	}
+
+	// Build the scenario path (with or without profile)
+	scenarioPath := string(scenario)
+	if profileID != "" {
+		scenarioPath = string(typ.ProfiledScenarioName(scenario, profileID))
+	}
+
+	// Build base URL and token
+	host := "127.0.0.1"
+	if port := appManager.GetServerPort(); port != 0 {
+		host = fmt.Sprintf("127.0.0.1:%d", port)
+	}
+	port := appManager.GetServerPort()
+	if port == 0 {
+		port = 12580
+	}
+	baseURL := fmt.Sprintf("http://%s:%d", host, port)
+	apiKey := globalConfig.GetModelToken()
+
+	// Generate env map
+	env := generateCCEnv(baseURL, apiKey, scenarioPath, unified)
+
+	// Create temp settings file
+	settingsContent, err := json.MarshalIndent(map[string]interface{}{
+		"env": env,
+	}, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to generate settings: %w", err)
+	}
+
+	tmpDir := filepath.Join(os.TempDir(), "tingly-box-cc")
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		return fmt.Errorf("failed to create temp dir: %w", err)
+	}
+
+	tmpFile, err := os.CreateTemp(tmpDir, "settings-*.json")
+	if err != nil {
+		return fmt.Errorf("failed to create temp settings file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmpFile.Write(settingsContent); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("failed to write settings file: %w", err)
+	}
+	tmpFile.Close()
+
+	// Discover claude binary
+	variant, err := claude.FindClaudeCLI(context.Background())
+	if err != nil {
+		return fmt.Errorf("claude CLI not found: %w", err)
+	}
+
+	// Build claude args: --settings <file> + passthrough
+	execArgs := []string{"--settings", tmpPath}
+	execArgs = append(execArgs, claudeArgs...)
+
+	// Exec replaces current process
+	binPath := variant.Path
+	//nolint:gosec // intentional exec of user-installed CLI
+	execCmd := exec.Command(binPath, execArgs...)
+	execCmd.Stdin = os.Stdin
+	execCmd.Stdout = os.Stdout
+	execCmd.Stderr = os.Stderr
+	execCmd.Env = os.Environ()
+
+	return execCmd.Run()
+}
+
+// generateCCEnv builds the env vars map for Claude Code settings.
+func generateCCEnv(baseURL, apiKey, scenarioPath string, unified bool) map[string]string {
+	env := map[string]string{
+		"DISABLE_TELEMETRY":                        "1",
+		"DISABLE_ERROR_REPORTING":                  "1",
+		"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+		"API_TIMEOUT_MS":                           "3000000",
+		"ANTHROPIC_BASE_URL":                       baseURL + "/tingly/" + scenarioPath,
+		"ANTHROPIC_AUTH_TOKEN":                     apiKey,
+	}
+
+	if unified {
+		env["ANTHROPIC_MODEL"] = "tingly/cc"
+		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = "tingly/cc"
+		env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = "tingly/cc"
+		env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = "tingly/cc"
+		env["CLAUDE_CODE_SUBAGENT_MODEL"] = "tingly/cc"
+	} else {
+		env["ANTHROPIC_MODEL"] = "tingly/cc-default"
+		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = "tingly/cc-haiku"
+		env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = "tingly/cc-opus"
+		env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = "tingly/cc-sonnet"
+		env["CLAUDE_CODE_SUBAGENT_MODEL"] = "tingly/cc-subagent"
+	}
+
+	return env
+}
