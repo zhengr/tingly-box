@@ -10,6 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/tingly-dev/tingly-box/agentboot/claude"
+	"github.com/tingly-dev/tingly-box/internal/constant"
+	"github.com/tingly-dev/tingly-box/internal/server/config"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
@@ -99,7 +101,7 @@ func parseCCFlags(args []string) (profile string, unified *bool, remaining []str
 	return profile, unified, remaining, nil
 }
 
-// runCC orchestrates: ensure server → resolve profile → write temp settings → exec claude.
+// runCC orchestrates: ensure server → resolve profile → write settings → exec claude.
 func runCC(appManager *AppManager, profile string, unified bool, claudeArgs []string) error {
 	globalConfig := appManager.GetGlobalConfig()
 	scenario := typ.ScenarioClaudeCode
@@ -121,45 +123,34 @@ func runCC(appManager *AppManager, profile string, unified bool, claudeArgs []st
 	}
 
 	// Build base URL and token
-	host := "127.0.0.1"
-	if port := appManager.GetServerPort(); port != 0 {
-		host = fmt.Sprintf("127.0.0.1:%d", port)
-	}
 	port := appManager.GetServerPort()
 	if port == 0 {
 		port = 12580
 	}
-	baseURL := fmt.Sprintf("http://%s:%d", host, port)
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 	apiKey := globalConfig.GetModelToken()
 
-	// Generate env map
-	env := generateCCEnv(baseURL, apiKey, scenarioPath, unified)
+	// Generate env map (profile always uses separate mode)
+	envUnified := unified
+	if profileID != "" {
+		envUnified = false
+	}
+	env := generateCCEnv(baseURL, apiKey, scenarioPath, envUnified)
 
-	// Create temp settings file
-	settingsContent, err := json.MarshalIndent(map[string]interface{}{
-		"env": env,
-	}, "", "  ")
+	// Build settings file
+	var settingsPath string
+	var err error
+	if profileID != "" {
+		// Profile mode: copy user's settings.json to ~/.tingly-box/claude/<profileID>.json
+		// then merge the env section with tingly-box routing vars.
+		settingsPath, err = buildProfileSettings(profileID, env)
+	} else {
+		// Default mode: create a temp settings file with only env vars.
+		settingsPath, err = buildTempSettings(env)
+	}
 	if err != nil {
-		return fmt.Errorf("failed to generate settings: %w", err)
+		return err
 	}
-
-	tmpDir := filepath.Join(os.TempDir(), "tingly-box-cc")
-	if err := os.MkdirAll(tmpDir, 0755); err != nil {
-		return fmt.Errorf("failed to create temp dir: %w", err)
-	}
-
-	tmpFile, err := os.CreateTemp(tmpDir, "settings-*.json")
-	if err != nil {
-		return fmt.Errorf("failed to create temp settings file: %w", err)
-	}
-	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath)
-
-	if _, err := tmpFile.Write(settingsContent); err != nil {
-		tmpFile.Close()
-		return fmt.Errorf("failed to write settings file: %w", err)
-	}
-	tmpFile.Close()
 
 	// Discover claude binary
 	variant, err := claude.FindClaudeCLI(context.Background())
@@ -168,7 +159,7 @@ func runCC(appManager *AppManager, profile string, unified bool, claudeArgs []st
 	}
 
 	// Build claude args: --settings <file> + passthrough
-	execArgs := []string{"--settings", tmpPath}
+	execArgs := []string{"--settings", settingsPath}
 	execArgs = append(execArgs, claudeArgs...)
 
 	// Exec replaces current process
@@ -181,6 +172,74 @@ func runCC(appManager *AppManager, profile string, unified bool, claudeArgs []st
 	execCmd.Env = os.Environ()
 
 	return execCmd.Run()
+}
+
+// buildProfileSettings copies the user's ~/.claude/settings.json to
+// ~/.tingly-box/claude/<profileID>.json, then applies (merges) the tingly-box
+// env vars into it using the same apply logic as the web UI.
+func buildProfileSettings(profileID string, env map[string]string) (string, error) {
+	profileDir := filepath.Join(constant.GetTinglyConfDir(), "claude")
+	destPath := filepath.Join(profileDir, profileID+".json")
+
+	// Ensure the profile directory exists
+	if err := os.MkdirAll(profileDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create profile directory: %w", err)
+	}
+
+	// Copy user's ~/.claude/settings.json as the base (if it exists)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+	srcPath := filepath.Join(homeDir, ".claude", "settings.json")
+
+	if data, err := os.ReadFile(srcPath); err == nil {
+		if err := os.WriteFile(destPath, data, 0644); err != nil {
+			return "", fmt.Errorf("failed to copy user settings: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("failed to read user settings: %w", err)
+	}
+	// If file doesn't exist, destPath may not exist yet — ApplyClaudeSettingsToPath will create it
+
+	// Apply tingly-box env vars (merge into the copied settings)
+	result, err := config.ApplyClaudeSettingsToPath(destPath, env)
+	if err != nil {
+		return "", fmt.Errorf("failed to apply settings: %w", err)
+	}
+	if !result.Success {
+		return "", fmt.Errorf("failed to apply settings: %s", result.Message)
+	}
+
+	return destPath, nil
+}
+
+// buildTempSettings creates a temporary settings file containing only the env vars.
+func buildTempSettings(env map[string]string) (string, error) {
+	settingsContent, err := json.MarshalIndent(map[string]interface{}{
+		"env": env,
+	}, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to generate settings: %w", err)
+	}
+
+	tmpDir := filepath.Join(os.TempDir(), "tingly-box-cc")
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create temp dir: %w", err)
+	}
+
+	tmpFile, err := os.CreateTemp(tmpDir, "settings-*.json")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp settings file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer tmpFile.Close()
+
+	if _, err := tmpFile.Write(settingsContent); err != nil {
+		return "", fmt.Errorf("failed to write settings file: %w", err)
+	}
+
+	return tmpPath, nil
 }
 
 // generateCCEnv builds the env vars map for Claude Code settings.
