@@ -25,6 +25,13 @@ type builtinSearchHandler struct {
 	client *http.Client
 }
 
+type builtinSearchResponse struct {
+	Tool        string                `json:"tool"`
+	Query       string                `json:"query"`
+	ResultCount int                   `json:"result_count"`
+	Results     []builtinSearchResult `json:"results"`
+}
+
 func newBuiltinSearchHandler(config *builtinConfig, cache *builtinCache) *builtinSearchHandler {
 	client := &http.Client{Timeout: searchTimeout}
 	if config.ProxyURL != "" {
@@ -304,11 +311,14 @@ func decodeHTMLText(value string) string {
 	return value
 }
 
-func formatBuiltinSearchResults(results []builtinSearchResult) string {
-	if len(results) == 0 {
-		return `{"results": []}`
+func formatBuiltinSearchResults(query string, results []builtinSearchResult) string {
+	payload := builtinSearchResponse{
+		Tool:        BuiltinToolSearch,
+		Query:       query,
+		ResultCount: len(results),
+		Results:     results,
 	}
-	jsonBytes, err := json.Marshal(map[string]interface{}{"results": results})
+	jsonBytes, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Sprintf("Found %d results. Error formatting: %v", len(results), err)
 	}

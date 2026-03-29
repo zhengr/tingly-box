@@ -168,6 +168,24 @@ func TestBuiltinFetchBlocksRedirectToPrivateHost(t *testing.T) {
 	require.Contains(t, result.Error, "blocked hostname")
 }
 
+func TestFormatBuiltinSearchResultsUsesStructuredSchema(t *testing.T) {
+	results := []builtinSearchResult{{
+		Title:   "Result title",
+		URL:     "https://example.com",
+		Snippet: "Snippet",
+	}}
+
+	formatted := formatBuiltinSearchResults("query", results)
+
+	var payload builtinSearchResponse
+	require.NoError(t, json.Unmarshal([]byte(formatted), &payload))
+	require.Equal(t, BuiltinToolSearch, payload.Tool)
+	require.Equal(t, "query", payload.Query)
+	require.Equal(t, 1, payload.ResultCount)
+	require.Len(t, payload.Results, 1)
+	require.Equal(t, "Result title", payload.Results[0].Title)
+}
+
 var toolruntimeTestConfig = builtinConfig{
 	SearchAPI:    "duckduckgo",
 	MaxResults:   10,

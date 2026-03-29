@@ -89,7 +89,7 @@ func (s *builtinSource) CallTool(_ context.Context, name string, arguments strin
 		if err != nil {
 			return ToolResult{IsError: true, Error: fmt.Sprintf("search failed: %v", err)}
 		}
-		return ToolResult{Content: formatBuiltinSearchResults(results)}
+		return ToolResult{Content: formatBuiltinSearchResults(req.Query, results)}
 	case BuiltinToolFetch:
 		var req builtinFetchRequest
 		if err := json.Unmarshal([]byte(arguments), &req); err != nil {

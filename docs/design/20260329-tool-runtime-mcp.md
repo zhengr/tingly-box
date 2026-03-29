@@ -53,6 +53,11 @@ Builtin tools are now implemented inside `internal/toolruntime`.
 ### `web_search`
 
 `web_search` uses runtime-owned search code and cache rather than the removed interceptor package.
+It returns a structured payload with:
+- `tool`
+- `query`
+- `result_count`
+- `results`
 
 ### `web_fetch`
 
@@ -63,6 +68,7 @@ Builtin tools are now implemented inside `internal/toolruntime`.
 - bound response size
 - bounded timeout
 - structured result payload with:
+  - `tool`
   - `url`
   - `final_url`
   - `status_code`
@@ -80,6 +86,22 @@ Configuration is now expressed in terms of:
 - MCP source config
 
 No runtime fallback remains for the old `tool_interceptor` key.
+
+## Migration
+
+Existing configuration should be migrated as follows:
+- top-level `tool_interceptor` settings become `tool_runtime` with one builtin source
+- provider-specific `tool_interceptor` records in `tool_configs` should be rewritten as `tool_runtime` records
+- builtin search/fetch tuning fields map directly onto the builtin source config:
+  - `search_api`
+  - `search_key`
+  - `max_results`
+  - `proxy_url`
+  - `max_fetch_size`
+  - `fetch_timeout`
+  - `max_url_length`
+
+There is no active compatibility reader for legacy `tool_interceptor` records after this cleanup. Existing deployments must rewrite persisted config before depending on the new code path.
 
 ## Testing
 

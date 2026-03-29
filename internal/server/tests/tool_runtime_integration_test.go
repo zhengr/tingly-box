@@ -9,8 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/tingly-dev/tingly-box/internal/constant"
 	"github.com/tingly-dev/tingly-box/internal/data/db"
 	"github.com/tingly-dev/tingly-box/internal/loadbalance"
+	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
@@ -240,6 +242,126 @@ func TestToolRuntimeE2E_GoogleFollowUpViaMCP(t *testing.T) {
 	assertGoogleFunctionResponseInjected(t, history[1], "gcall_1", "hello Tingly")
 }
 
+func TestToolRuntimeE2E_AnthropicNativeWebSearchSuppressesRuntimeSearch(t *testing.T) {
+	ts := NewTestServer(t)
+	mock := NewMockProviderServer()
+	defer mock.Close()
+
+	configureBuiltinRuntime(t, ts)
+	provider := &typ.Provider{
+		UUID:     "mock-native-search",
+		Name:     "mock-native-search",
+		APIBase:  mock.GetURL(),
+		APIStyle: protocol.APIStyleAnthropic,
+		Token:    "sk-ant-oat-test",
+		Enabled:  true,
+		Timeout:  int64(constant.DefaultRequestTimeout),
+		AuthType: typ.AuthTypeOAuth,
+		OAuthDetail: &typ.OAuthDetail{
+			ProviderType: "claude_code",
+			AccessToken:  "sk-ant-oat-test",
+		},
+	}
+	require.NoError(t, ts.appConfig.AddProvider(provider))
+	addScenarioRule(t, ts, "native-search-anthropic", typ.ScenarioAnthropic, provider.UUID, "claude-test")
+
+	mock.SetResponse("/v1/messages", MockResponse{
+		StatusCode: 200,
+		Body: map[string]interface{}{
+			"id":    "msg-final",
+			"type":  "message",
+			"role":  "assistant",
+			"model": "claude-test",
+			"content": []map[string]interface{}{
+				{"type": "text", "text": "Native search provider response"},
+			},
+			"stop_reason": "end_turn",
+			"usage": map[string]interface{}{
+				"input_tokens":  8,
+				"output_tokens": 4,
+			},
+		},
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/tingly/anthropic/v1/messages", CreateJSONBody(map[string]interface{}{
+		"model":      "native-search-anthropic",
+		"max_tokens": 128,
+		"messages": []map[string]interface{}{
+			{"role": "user", "content": "Search if needed"},
+		},
+	}))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+ts.appConfig.GetGlobalConfig().GetModelToken())
+	ts.ginEngine.ServeHTTP(w, req)
+
+	require.Equal(t, 200, w.Code, w.Body.String())
+	history := mock.GetRequestHistory("/v1/messages")
+	require.Len(t, history, 1)
+	assertAnthropicToolsNotContain(t, history[0], "web_search")
+	assertAnthropicToolsContain(t, history[0], "web_fetch")
+}
+
+func TestToolRuntimeE2E_OpenAIFetchErrorFollowUp(t *testing.T) {
+	ts := NewTestServer(t)
+	mock := NewMockProviderServer()
+	defer mock.Close()
+
+	configureBuiltinRuntime(t, ts)
+	ts.AddTestProviderWithURL(t, "mock-openai-fetch-error", mock.GetURL(), "openai", true)
+	addScenarioRule(t, ts, "runtime-openai-fetch-error", typ.ScenarioOpenAI, "mock-openai-fetch-error", "gpt-4.1")
+
+	mock.SetResponseSequence("/chat/completions", []MockResponse{
+		{
+			StatusCode: 200,
+			Body: CreateMockChatCompletionResponseWithToolCalls(
+				"chatcmpl-tool",
+				"gpt-4.1",
+				"",
+				[]map[string]interface{}{
+					{
+						"id":   "call_fetch_1",
+						"type": "function",
+						"function": map[string]interface{}{
+							"name":      "web_fetch",
+							"arguments": `{"url":"http://localhost:8080/secret"}`,
+						},
+					},
+				},
+			),
+		},
+		{
+			StatusCode: 200,
+			Body:       CreateMockChatCompletionResponse("chatcmpl-final", "gpt-4.1", "Handled fetch failure"),
+		},
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/tingly/openai/v1/chat/completions", CreateJSONBody(map[string]interface{}{
+		"model": "runtime-openai-fetch-error",
+		"messages": []map[string]interface{}{
+			{"role": "user", "content": "Fetch a page if needed"},
+		},
+	}))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+ts.appConfig.GetGlobalConfig().GetModelToken())
+	ts.ginEngine.ServeHTTP(w, req)
+
+	require.Equal(t, 200, w.Code, w.Body.String())
+	assert.Equal(t, 2, mock.GetCallCount("/chat/completions"))
+
+	var response map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	choices := response["choices"].([]interface{})
+	message := choices[0].(map[string]interface{})["message"].(map[string]interface{})
+	assert.Equal(t, "Handled fetch failure", message["content"])
+
+	history := mock.GetRequestHistory("/chat/completions")
+	require.Len(t, history, 2)
+	assertOpenAIToolsContain(t, history[0], "web_fetch")
+	assertOpenAIToolResultInjected(t, history[1], "call_fetch_1", "blocked hostname")
+}
+
 func configureMCPRuntime(t *testing.T, ts *TestServer) {
 	repoRoot, err := FindGoModRoot()
 	require.NoError(t, err)
@@ -258,6 +380,11 @@ func configureMCPRuntime(t *testing.T, ts *TestServer) {
 			},
 		}},
 	}
+	require.NoError(t, ts.appConfig.GetGlobalConfig().SetToolConfig(db.ToolTypeRuntime, runtimeCfg))
+}
+
+func configureBuiltinRuntime(t *testing.T, ts *TestServer) {
+	runtimeCfg := typ.DefaultToolRuntimeConfig()
 	require.NoError(t, ts.appConfig.GetGlobalConfig().SetToolConfig(db.ToolTypeRuntime, runtimeCfg))
 }
 
@@ -323,6 +450,15 @@ func assertAnthropicToolsContain(t *testing.T, request map[string]interface{}, n
 		}
 	}
 	assert.True(t, found, "expected runtime tool %s in Anthropic request tools", name)
+}
+
+func assertAnthropicToolsNotContain(t *testing.T, request map[string]interface{}, name string) {
+	tools, ok := request["tools"].([]interface{})
+	require.True(t, ok)
+	for _, item := range tools {
+		tool := item.(map[string]interface{})
+		assert.NotEqual(t, name, tool["name"])
+	}
 }
 
 func assertAnthropicToolResultInjected(t *testing.T, request map[string]interface{}, toolUseID, expectedContent string) {
