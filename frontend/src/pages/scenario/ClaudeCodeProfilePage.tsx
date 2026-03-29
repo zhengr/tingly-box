@@ -26,13 +26,16 @@ import {
     Typography
 } from '@mui/material';
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import TemplatePage from './components/TemplatePage.tsx';
 
 const BASE_SCENARIO = 'claude_code';
 
 const ClaudeCodeProfilePage: React.FC = () => {
     const { profileId } = useParams<{ profileId: string }>();
+    const navigate = useNavigate();
+    const { t } = useTranslation();
     const scenario = `${BASE_SCENARIO}:${profileId}`;
 
     const {
@@ -87,14 +90,14 @@ const ClaudeCodeProfilePage: React.FC = () => {
             setIsProfileMutating(true);
             const result = await api.updateProfile(BASE_SCENARIO, profileId, renameName.trim());
             if (result.success) {
-                showNotification('Profile renamed', 'success');
+                showNotification(t('claudeCode.profile.profileRenamed'), 'success');
                 setRenameProfileOpen(false);
                 refreshProfiles();
             } else {
-                showNotification(`Failed to rename profile: ${result.error || 'Unknown error'}`, 'error');
+                showNotification(`${t('claudeCode.profile.renameFailed')}: ${result.error || 'Unknown error'}`, 'error');
             }
         } catch {
-            showNotification('Failed to rename profile', 'error');
+            showNotification(t('claudeCode.profile.renameFailed'), 'error');
         } finally {
             setIsProfileMutating(false);
         }
@@ -107,15 +110,15 @@ const ClaudeCodeProfilePage: React.FC = () => {
             setIsProfileMutating(true);
             const result = await api.deleteProfile(BASE_SCENARIO, profileId);
             if (result.success) {
-                showNotification('Profile deleted', 'success');
+                showNotification(t('claudeCode.profile.profileDeleted'), 'success');
                 setDeleteProfileOpen(false);
                 refreshProfiles();
-                window.location.href = '/use-claude-code';
+                navigate('/use-claude-code');
             } else {
-                showNotification(`Failed to delete profile: ${result.error || 'Unknown error'}`, 'error');
+                showNotification(`${t('claudeCode.profile.deleteFailed')}: ${result.error || 'Unknown error'}`, 'error');
             }
         } catch {
-            showNotification('Failed to delete profile', 'error');
+            showNotification(t('claudeCode.profile.deleteFailed'), 'error');
         } finally {
             setIsProfileMutating(false);
         }
@@ -139,12 +142,12 @@ const ClaudeCodeProfilePage: React.FC = () => {
                                     <InfoIcon fontSize="small" sx={{ color: 'text.secondary' }} />
                                 </IconButton>
                             </Tooltip>
-                            <Tooltip title="Rename profile">
+                            <Tooltip title={t('claudeCode.profile.renameProfile')}>
                                 <IconButton size="small" onClick={() => { setRenameName(currentProfile?.name || ''); setRenameProfileOpen(true); }}>
                                     <EditIcon fontSize="small" />
                                 </IconButton>
                             </Tooltip>
-                            <Tooltip title="Delete profile">
+                            <Tooltip title={t('claudeCode.profile.deleteProfile')}>
                                 <IconButton size="small" color="error" onClick={() => setDeleteProfileOpen(true)}>
                                     <DeleteIcon fontSize="small" />
                                 </IconButton>
@@ -172,7 +175,7 @@ const ClaudeCodeProfilePage: React.FC = () => {
                                 sx={{ minWidth: 190, flexShrink: 0, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 0.5 }}
                             >
                                 <TerminalIcon sx={{ fontSize: '1rem' }} />
-                                Quick Start
+                                {t('claudeCode.profile.quickStart')}
                             </Typography>
                             <Typography
                                 variant="subtitle2"
@@ -192,12 +195,12 @@ const ClaudeCodeProfilePage: React.FC = () => {
                                     borderRadius: 1,
                                     transition: 'all 0.2s ease-in-out'
                                 }}
-                                title="Click to copy command"
+                                title={t('claudeCode.profile.clickToCopy')}
                             >
                                 {ccCommand}
                             </Typography>
                             <Box sx={{ display: 'flex', gap: 0.5, ml: 'auto' }}>
-                                <Tooltip title={npmMode ? 'Switch to global command' : 'Switch to npm command'}>
+                                <Tooltip title={npmMode ? t('claudeCode.profile.switchToGlobal') : t('claudeCode.profile.switchToNpm')}>
                                     <IconButton
                                         onClick={() => setNpmMode(!npmMode)}
                                         size="small"
@@ -225,7 +228,7 @@ const ClaudeCodeProfilePage: React.FC = () => {
                                         )}
                                     </IconButton>
                                 </Tooltip>
-                                <Tooltip title="Copy command">
+                                <Tooltip title={t('claudeCode.profile.copyCommand')}>
                                     <IconButton size="small" onClick={() => copyToClipboard(ccCommand, 'command')}>
                                         <ContentCopyIcon fontSize="small" />
                                     </IconButton>
@@ -257,12 +260,12 @@ const ClaudeCodeProfilePage: React.FC = () => {
                         }
                     }}
                 >
-                    <DialogTitle>Rename Profile</DialogTitle>
+                    <DialogTitle>{t('claudeCode.profile.renameTitle')}</DialogTitle>
                     <DialogContent sx={{ pt: 1 }}>
                         <TextField
                             autoFocus
                             fullWidth
-                            label="Profile Name"
+                            label={t('claudeCode.profile.profileName')}
                             value={renameName}
                             onChange={(e) => setRenameName(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleRenameProfile()}
@@ -275,7 +278,7 @@ const ClaudeCodeProfilePage: React.FC = () => {
                             Cancel
                         </Button>
                         <Button onClick={handleRenameProfile} variant="contained" disabled={!renameName.trim() || isProfileMutating}>
-                            Save
+                            {t('claudeCode.profile.save')}
                         </Button>
                     </DialogActions>
                 </Dialog>
@@ -287,13 +290,13 @@ const ClaudeCodeProfilePage: React.FC = () => {
                     maxWidth="xs"
                     fullWidth
                 >
-                    <DialogTitle>Delete Profile</DialogTitle>
+                    <DialogTitle>{t('claudeCode.profile.deleteTitle')}</DialogTitle>
                     <DialogContent sx={{ pt: 3 }}>
                         <Typography variant="body1">
-                            Are you sure you want to delete profile <strong>{currentProfile?.name || profileId}</strong>?
+                            {t('claudeCode.profile.deleteConfirm', { name: currentProfile?.name || profileId || '', interpolation: { escapeValue: false } })}
                         </Typography>
                         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                            This will remove the profile and all its associated rules and flags. This action cannot be undone.
+                            {t('claudeCode.profile.deleteWarning')}
                         </Typography>
                     </DialogContent>
                     <DialogActions sx={{ px: 3, pb: 2, gap: 1, justifyContent: 'flex-end' }}>
