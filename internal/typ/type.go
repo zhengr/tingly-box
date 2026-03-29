@@ -240,6 +240,172 @@ func ApplyToolInterceptorDefaults(config *ToolInterceptorConfig) {
 	}
 }
 
+const (
+	ToolSourceTypeBuiltin = "builtin"
+	ToolSourceTypeMCP     = "mcp"
+)
+
+// ToolRuntimeConfig defines the generic runtime configuration for local and MCP-backed tools.
+type ToolRuntimeConfig struct {
+	Enabled    FlexibleBool     `json:"enabled,omitempty"`
+	AutoExpose FlexibleBool     `json:"auto_expose,omitempty"`
+	Sources    []ToolSourceConfig `json:"sources,omitempty"`
+}
+
+// ToolSourceConfig defines one tool source instance.
+type ToolSourceConfig struct {
+	ID      string                   `json:"id,omitempty"`
+	Type    string                   `json:"type,omitempty"`
+	Enabled FlexibleBool             `json:"enabled,omitempty"`
+	Builtin *BuiltinToolSourceConfig `json:"builtin,omitempty"`
+	MCP     *MCPToolSourceConfig     `json:"mcp,omitempty"`
+}
+
+// BuiltinToolSourceConfig wraps the legacy search/fetch local tooling as a builtin runtime source.
+type BuiltinToolSourceConfig struct {
+	SearchAPI    string `json:"search_api,omitempty"`
+	SearchKey    string `json:"search_key,omitempty"`
+	MaxResults   int    `json:"max_results,omitempty"`
+	ProxyURL     string `json:"proxy_url,omitempty"`
+	MaxFetchSize int64  `json:"max_fetch_size,omitempty"`
+	FetchTimeout int64  `json:"fetch_timeout,omitempty"`
+	MaxURLLength int    `json:"max_url_length,omitempty"`
+}
+
+// MCPToolSourceConfig defines a stdio-backed MCP server source.
+type MCPToolSourceConfig struct {
+	Command string            `json:"command,omitempty"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+	Cwd     string            `json:"cwd,omitempty"`
+}
+
+// ApplyToolRuntimeDefaults fills runtime defaults in-place.
+func ApplyToolRuntimeDefaults(config *ToolRuntimeConfig) {
+	if config == nil {
+		return
+	}
+	if !bool(config.Enabled) {
+		config.Enabled = true
+	}
+	if !bool(config.AutoExpose) {
+		config.AutoExpose = true
+	}
+	if len(config.Sources) == 0 {
+		config.Sources = []ToolSourceConfig{DefaultBuiltinToolSourceConfig()}
+	}
+	for i := range config.Sources {
+		ApplyToolSourceDefaults(&config.Sources[i])
+	}
+}
+
+// ApplyToolSourceDefaults fills source defaults in-place.
+func ApplyToolSourceDefaults(source *ToolSourceConfig) {
+	if source == nil {
+		return
+	}
+	if source.ID == "" {
+		if source.Type == ToolSourceTypeMCP {
+			source.ID = "mcp"
+		} else {
+			source.ID = "builtin"
+		}
+	}
+	if !bool(source.Enabled) {
+		source.Enabled = true
+	}
+	if source.Type == "" {
+		if source.MCP != nil {
+			source.Type = ToolSourceTypeMCP
+		} else {
+			source.Type = ToolSourceTypeBuiltin
+		}
+	}
+	if source.Type == ToolSourceTypeBuiltin {
+		if source.Builtin == nil {
+			cfg := DefaultBuiltinToolSourceConfig()
+			source.Builtin = cfg.Builtin
+		} else {
+			ApplyBuiltinToolSourceDefaults(source.Builtin)
+		}
+	}
+}
+
+// ApplyBuiltinToolSourceDefaults fills builtin source defaults in-place.
+func ApplyBuiltinToolSourceDefaults(config *BuiltinToolSourceConfig) {
+	if config == nil {
+		return
+	}
+	if config.SearchAPI == "" {
+		config.SearchAPI = "duckduckgo"
+	}
+	if config.MaxResults == 0 {
+		config.MaxResults = 10
+	}
+	if config.MaxFetchSize == 0 {
+		config.MaxFetchSize = 1 * 1024 * 1024
+	}
+	if config.FetchTimeout == 0 {
+		config.FetchTimeout = 30
+	}
+	if config.MaxURLLength == 0 {
+		config.MaxURLLength = 2000
+	}
+}
+
+// DefaultBuiltinToolSourceConfig returns the default builtin tool source.
+func DefaultBuiltinToolSourceConfig() ToolSourceConfig {
+	cfg := &BuiltinToolSourceConfig{}
+	ApplyBuiltinToolSourceDefaults(cfg)
+	return ToolSourceConfig{
+		ID:      "builtin",
+		Type:    ToolSourceTypeBuiltin,
+		Enabled: true,
+		Builtin: cfg,
+	}
+}
+
+// DefaultToolRuntimeConfig returns the in-memory default runtime config.
+func DefaultToolRuntimeConfig() *ToolRuntimeConfig {
+	cfg := &ToolRuntimeConfig{
+		Enabled:    true,
+		AutoExpose: true,
+		Sources:    []ToolSourceConfig{DefaultBuiltinToolSourceConfig()},
+	}
+	ApplyToolRuntimeDefaults(cfg)
+	return cfg
+}
+
+// ToolRuntimeConfigFromInterceptor converts the legacy search/fetch config into a builtin runtime config.
+func ToolRuntimeConfigFromInterceptor(config *ToolInterceptorConfig) *ToolRuntimeConfig {
+	if config == nil {
+		return DefaultToolRuntimeConfig()
+	}
+	ApplyToolInterceptorDefaults(config)
+	builtin := &BuiltinToolSourceConfig{
+		SearchAPI:    config.SearchAPI,
+		SearchKey:    config.SearchKey,
+		MaxResults:   config.MaxResults,
+		ProxyURL:     config.ProxyURL,
+		MaxFetchSize: config.MaxFetchSize,
+		FetchTimeout: config.FetchTimeout,
+		MaxURLLength: config.MaxURLLength,
+	}
+	ApplyBuiltinToolSourceDefaults(builtin)
+	runtimeConfig := &ToolRuntimeConfig{
+		Enabled:    true,
+		AutoExpose: true,
+		Sources: []ToolSourceConfig{{
+			ID:      "builtin",
+			Type:    ToolSourceTypeBuiltin,
+			Enabled: true,
+			Builtin: builtin,
+		}},
+	}
+	ApplyToolRuntimeDefaults(runtimeConfig)
+	return runtimeConfig
+}
+
 // IsExpired checks if the OAuth token is expired
 func (o *OAuthDetail) IsExpired() bool {
 	if o == nil || o.ExpiresAt == "" {

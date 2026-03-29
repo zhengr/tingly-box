@@ -62,6 +62,9 @@ type Config struct {
 	// Value is the JSON-encoded config for that tool type
 	ToolConfigs map[string]json.RawMessage `json:"tool_configs,omitempty"`
 
+	// ToolRuntimeConfig is a shortcut for generic runtime config at top level.
+	ToolRuntimeConfig *typ.ToolRuntimeConfig `json:"tool_runtime,omitempty"`
+
 	// Error log settings
 	ErrorLogFilterExpression string `json:"error_log_filter_expression"` // Expression for filtering error log entries (default: "StatusCode >= 400 && (Path matches '^/api/' || Path matches '^/tbe/')")
 
@@ -977,6 +980,39 @@ func (c *Config) GetToolInterceptorConfig() *typ.ToolInterceptorConfig {
 	return nil
 }
 
+// GetToolRuntimeConfig returns the effective global tool runtime config, translating legacy interceptor config when needed.
+func (c *Config) GetToolRuntimeConfig() *typ.ToolRuntimeConfig {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.ToolRuntimeConfig != nil {
+		cfg := *c.ToolRuntimeConfig
+		typ.ApplyToolRuntimeDefaults(&cfg)
+		return &cfg
+	}
+
+	if c.ToolConfigs != nil {
+		if data, ok := c.ToolConfigs[db.ToolTypeRuntime]; ok {
+			var config typ.ToolRuntimeConfig
+			if err := json.Unmarshal(data, &config); err == nil {
+				typ.ApplyToolRuntimeDefaults(&config)
+				return &config
+			}
+		}
+	}
+
+	var legacy typ.ToolInterceptorConfig
+	if c.ToolConfigs != nil {
+		if data, ok := c.ToolConfigs[db.ToolTypeInterceptor]; ok {
+			if err := json.Unmarshal(data, &legacy); err == nil {
+				return typ.ToolRuntimeConfigFromInterceptor(&legacy)
+			}
+		}
+	}
+
+	return typ.DefaultToolRuntimeConfig()
+}
+
 // GetToolConfig returns the global config for a specific tool type
 // target is a pointer to the config struct to unmarshal into
 // Returns true if config was found and successfully unmarshaled
@@ -1017,6 +1053,38 @@ func (c *Config) SetToolConfig(toolType string, config interface{}) error {
 
 	c.ToolConfigs[toolType] = data
 	return c.Save()
+}
+
+// GetToolRuntimeConfigForProvider returns the effective runtime config for a provider.
+func (c *Config) GetToolRuntimeConfigForProvider(providerUUID string) (*typ.ToolRuntimeConfig, bool) {
+	global := c.GetToolRuntimeConfig()
+	if c.toolConfigStore == nil {
+		if global == nil {
+			return nil, false
+		}
+		return global, bool(global.Enabled)
+	}
+
+	providerConfig, enabled, err := c.toolConfigStore.GetToolRuntimeConfig(providerUUID)
+	if err != nil {
+		logrus.Warnf("Failed to get tool runtime config for provider %s: %v", providerUUID, err)
+	}
+	if providerConfig != nil {
+		return providerConfig, enabled && bool(providerConfig.Enabled)
+	}
+	if err == nil {
+		legacyProvider, legacyEnabled, legacyErr := c.toolConfigStore.GetToolInterceptorConfig(providerUUID)
+		if legacyErr != nil {
+			logrus.Warnf("Failed to get legacy tool interceptor config for provider %s: %v", providerUUID, legacyErr)
+		} else if legacyProvider != nil {
+			return typ.ToolRuntimeConfigFromInterceptor(legacyProvider), legacyEnabled
+		}
+	}
+
+	if global == nil {
+		return nil, false
+	}
+	return global, bool(global.Enabled)
 }
 
 // GetToolInterceptorConfigForProvider returns the effective tool interceptor config for a specific provider

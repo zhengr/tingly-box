@@ -27,7 +27,7 @@ import (
 	oauthmodule "github.com/tingly-dev/tingly-box/internal/server/module/oauth"
 	"github.com/tingly-dev/tingly-box/internal/server/routing"
 	servertls "github.com/tingly-dev/tingly-box/internal/server/tls"
-	"github.com/tingly-dev/tingly-box/internal/toolinterceptor"
+	"github.com/tingly-dev/tingly-box/internal/toolruntime"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 	"github.com/tingly-dev/tingly-box/internal/virtualmodel"
 	"github.com/tingly-dev/tingly-box/pkg/auth"
@@ -88,8 +88,8 @@ type Server struct {
 	// capability store for persistent model capabilities
 	capabilityStore *db.ModelCapabilityStore
 
-	// tool interceptor for local tool execution
-	toolInterceptor *toolinterceptor.Interceptor
+	// tool runtime for builtin and MCP-backed tool execution
+	toolRuntime *toolruntime.Runtime
 
 	// recording sinks
 	recordSink *obs.Sink
@@ -490,10 +490,9 @@ func NewServer(cfg *config.Config, opts ...ServerOption) *Server {
 	// Set template manager in config for model fetching fallback
 	server.config.SetTemplateManager(templateManager)
 
-	// Initialize tool interceptor (local web_search/web_fetch)
-	// Pass a config provider function that gets effective config for each provider
-	server.toolInterceptor = toolinterceptor.NewInterceptor(func(providerUUID string) (*typ.ToolInterceptorConfig, bool) {
-		return cfg.GetToolInterceptorConfigForProvider(providerUUID)
+	// Initialize generic tool runtime (builtin tools + stdio MCP sources)
+	server.toolRuntime = toolruntime.New(func(providerUUID string) (*typ.ToolRuntimeConfig, bool) {
+		return cfg.GetToolRuntimeConfigForProvider(providerUUID)
 	})
 
 	// Initialize probe cache with 24-hour TTL

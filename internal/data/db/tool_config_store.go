@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -21,6 +22,7 @@ import (
 // ToolType constants for different tool configuration types
 const (
 	ToolTypeInterceptor = "tool_interceptor" // Search and fetch tool interception
+	ToolTypeRuntime     = "tool_runtime"     // Generic tool runtime configuration
 	// Future types: "code_execution", "database_query", etc.
 )
 
@@ -253,6 +255,57 @@ func (tcs *ToolConfigStore) SetToolInterceptorConfig(providerUUID string, config
 	}
 
 	return uuid, nil
+}
+
+// GetToolRuntimeConfig returns the tool runtime config for a provider.
+func (tcs *ToolConfigStore) GetToolRuntimeConfig(providerUUID string) (*typ.ToolRuntimeConfig, bool, error) {
+	record, err := tcs.GetByProviderAndType(providerUUID, ToolTypeRuntime)
+	if err != nil {
+		return nil, false, err
+	}
+	if record == nil {
+		return nil, false, nil
+	}
+	if record.Disabled {
+		return nil, false, nil
+	}
+
+	var config typ.ToolRuntimeConfig
+	if err := json.Unmarshal([]byte(record.ConfigJSON), &config); err != nil {
+		return nil, false, fmt.Errorf("failed to unmarshal tool runtime config: %w", err)
+	}
+	typ.ApplyToolRuntimeDefaults(&config)
+	return &config, true, nil
+}
+
+// SetToolRuntimeConfig saves the tool runtime config for a provider.
+func (tcs *ToolConfigStore) SetToolRuntimeConfig(providerUUID string, config *typ.ToolRuntimeConfig, disabled bool) (string, error) {
+	configJSON, err := json.Marshal(config)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal tool runtime config: %w", err)
+	}
+
+	record := &ToolConfigRecord{
+		UUID:         uuid.NewString(),
+		ProviderUUID: providerUUID,
+		ToolType:     ToolTypeRuntime,
+		ConfigJSON:   string(configJSON),
+		Disabled:     disabled,
+	}
+
+	existing, err := tcs.GetByProviderAndType(providerUUID, ToolTypeRuntime)
+	if err != nil {
+		return "", err
+	}
+	if existing != nil {
+		record.UUID = existing.UUID
+		record.CreatedAt = existing.CreatedAt
+	}
+
+	if err := tcs.Save(record); err != nil {
+		return "", err
+	}
+	return record.UUID, nil
 }
 
 // IsDisabled checks if tool interceptor is disabled for a provider
