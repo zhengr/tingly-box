@@ -58,7 +58,7 @@ type Config struct {
 	OpenBrowser      bool `yaml:"-" json:"-"`         // Auto-open browser in web UI mode (default: true)
 
 	// Generic tool configs map for all tool types
-	// Key is tool_type (e.g., "tool_interceptor", "code_execution")
+	// Key is tool_type (e.g., "tool_runtime", "code_execution")
 	// Value is the JSON-encoded config for that tool type
 	ToolConfigs map[string]json.RawMessage `json:"tool_configs,omitempty"`
 
@@ -963,24 +963,7 @@ func (c *Config) GetDefaultMaxTokens() int {
 	return c.DefaultMaxTokens
 }
 
-// GetToolInterceptorConfig returns the global tool interceptor config
-func (c *Config) GetToolInterceptorConfig() *typ.ToolInterceptorConfig {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	var config typ.ToolInterceptorConfig
-	if c.ToolConfigs != nil {
-		if data, ok := c.ToolConfigs[db.ToolTypeInterceptor]; ok {
-			if err := json.Unmarshal(data, &config); err == nil {
-				return &config
-			}
-		}
-	}
-
-	return nil
-}
-
-// GetToolRuntimeConfig returns the effective global tool runtime config, translating legacy interceptor config when needed.
+// GetToolRuntimeConfig returns the effective global tool runtime config.
 func (c *Config) GetToolRuntimeConfig() *typ.ToolRuntimeConfig {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -997,15 +980,6 @@ func (c *Config) GetToolRuntimeConfig() *typ.ToolRuntimeConfig {
 			if err := json.Unmarshal(data, &config); err == nil {
 				typ.ApplyToolRuntimeDefaults(&config)
 				return &config
-			}
-		}
-	}
-
-	var legacy typ.ToolInterceptorConfig
-	if c.ToolConfigs != nil {
-		if data, ok := c.ToolConfigs[db.ToolTypeInterceptor]; ok {
-			if err := json.Unmarshal(data, &legacy); err == nil {
-				return typ.ToolRuntimeConfigFromInterceptor(&legacy)
 			}
 		}
 	}
@@ -1072,106 +1046,11 @@ func (c *Config) GetToolRuntimeConfigForProvider(providerUUID string) (*typ.Tool
 	if providerConfig != nil {
 		return providerConfig, enabled && bool(providerConfig.Enabled)
 	}
-	if err == nil {
-		legacyProvider, legacyEnabled, legacyErr := c.toolConfigStore.GetToolInterceptorConfig(providerUUID)
-		if legacyErr != nil {
-			logrus.Warnf("Failed to get legacy tool interceptor config for provider %s: %v", providerUUID, legacyErr)
-		} else if legacyProvider != nil {
-			return typ.ToolRuntimeConfigFromInterceptor(legacyProvider), legacyEnabled
-		}
-	}
 
 	if global == nil {
 		return nil, false
 	}
 	return global, bool(global.Enabled)
-}
-
-// GetToolInterceptorConfigForProvider returns the effective tool interceptor config for a specific provider
-// This merges the global config with provider-specific config from the tool config store
-func (c *Config) GetToolInterceptorConfigForProvider(providerUUID string) (*typ.ToolInterceptorConfig, bool) {
-	global := c.GetToolInterceptorConfig()
-	if global == nil && c.toolConfigStore == nil {
-		return nil, false
-	}
-
-	// Try to get provider-specific config from the store
-	providerConfig, enabled, err := c.toolConfigStore.GetToolInterceptorConfig(providerUUID)
-	if err != nil {
-		logrus.Warnf("Failed to get tool interceptor config for provider %s: %v", providerUUID, err)
-	}
-
-	// If provider explicitly disabled, return disabled
-	if providerConfig != nil && !enabled {
-		return nil, false
-	}
-
-	// If provider has config, merge with global (provider takes precedence)
-	if providerConfig != nil {
-		// Start with an empty config or copy from global if available
-		effective := &typ.ToolInterceptorConfig{}
-
-		// Copy global config values if global is not nil
-		if global != nil {
-			effective.PreferLocalSearch = global.PreferLocalSearch
-			effective.SearchAPI = global.SearchAPI
-			effective.SearchKey = global.SearchKey
-			effective.MaxResults = global.MaxResults
-			effective.ProxyURL = global.ProxyURL
-			effective.MaxFetchSize = global.MaxFetchSize
-			effective.FetchTimeout = global.FetchTimeout
-			effective.MaxURLLength = global.MaxURLLength
-		}
-
-		// Apply provider overrides
-		if providerConfig.PreferLocalSearch {
-			effective.PreferLocalSearch = true
-		}
-		if providerConfig.SearchAPI != "" {
-			effective.SearchAPI = providerConfig.SearchAPI
-		}
-		if providerConfig.SearchKey != "" {
-			effective.SearchKey = providerConfig.SearchKey
-		}
-		if providerConfig.MaxResults != 0 {
-			effective.MaxResults = providerConfig.MaxResults
-		}
-		if providerConfig.ProxyURL != "" {
-			effective.ProxyURL = providerConfig.ProxyURL
-		}
-		if providerConfig.MaxFetchSize != 0 {
-			effective.MaxFetchSize = providerConfig.MaxFetchSize
-		}
-		if providerConfig.FetchTimeout != 0 {
-			effective.FetchTimeout = providerConfig.FetchTimeout
-		}
-		if providerConfig.MaxURLLength != 0 {
-			effective.MaxURLLength = providerConfig.MaxURLLength
-		}
-
-		// Apply defaults
-		typ.ApplyToolInterceptorDefaults(effective)
-		return effective, true
-	}
-
-	// No provider-specific config, use global if enabled
-	if global == nil {
-		return nil, false
-	}
-
-	effective := &typ.ToolInterceptorConfig{
-		PreferLocalSearch: global.PreferLocalSearch,
-		SearchAPI:         global.SearchAPI,
-		SearchKey:         global.SearchKey,
-		MaxResults:        global.MaxResults,
-		ProxyURL:          global.ProxyURL,
-		MaxFetchSize:      global.MaxFetchSize,
-		FetchTimeout:      global.FetchTimeout,
-		MaxURLLength:      global.MaxURLLength,
-	}
-
-	typ.ApplyToolInterceptorDefaults(effective)
-	return effective, true
 }
 
 // GetEffectiveToolConfig returns the effective tool config for a specific provider and tool type
@@ -1180,13 +1059,13 @@ func (c *Config) GetToolInterceptorConfigForProvider(providerUUID string) (*typ.
 //
 // Usage:
 //
-//	var globalCfg typ.ToolInterceptorConfig
-//	if !c.GetToolConfig(db.ToolTypeInterceptor, &globalCfg) {
+//	var globalCfg typ.ToolRuntimeConfig
+//	if !c.GetToolConfig(db.ToolTypeRuntime, &globalCfg) {
 //	    // No global config
 //	    return nil, false
 //	}
 //
-//	effective, enabled := c.GetEffectiveToolConfig(providerUUID, db.ToolTypeInterceptor,
+//	effective, enabled := c.GetEffectiveToolConfig(providerUUID, db.ToolTypeRuntime,
 //	    func(globalJSON, providerJSON []byte) ([]byte, error) {
 //	        // Custom merge logic
 //	        return mergedJSON, nil

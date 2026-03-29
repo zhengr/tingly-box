@@ -103,25 +103,6 @@ func TestParseMCPToolName(t *testing.T) {
 	require.Equal(t, "echo", rawName)
 }
 
-func TestToolRuntimeConfigFromInterceptor(t *testing.T) {
-	cfg := typ.ToolRuntimeConfigFromInterceptor(&typ.ToolInterceptorConfig{
-		SearchAPI:    "google",
-		SearchKey:    "secret",
-		MaxResults:   7,
-		ProxyURL:     "http://127.0.0.1:7897",
-		MaxFetchSize: 2048,
-		FetchTimeout: 42,
-		MaxURLLength: 900,
-	})
-
-	require.NotNil(t, cfg)
-	require.Len(t, cfg.Sources, 1)
-	require.Equal(t, typ.ToolSourceTypeBuiltin, cfg.Sources[0].Type)
-	require.NotNil(t, cfg.Sources[0].Builtin)
-	require.Equal(t, "google", cfg.Sources[0].Builtin.SearchAPI)
-	require.Equal(t, 7, cfg.Sources[0].Builtin.MaxResults)
-}
-
 func TestValidateBuiltinFetchURL(t *testing.T) {
 	tests := []struct {
 		name    string

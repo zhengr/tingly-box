@@ -195,51 +195,6 @@ type OAuthDetail struct {
 	ExtraFields  map[string]interface{} `json:"extra_fields"`  // Any extra field for some special clients
 }
 
-// ToolInterceptorConfig contains configuration for tool interceptor (search & fetch)
-type ToolInterceptorConfig struct {
-	PreferLocalSearch FlexibleBool `json:"prefer_local_search,omitempty"` // Prefer local tool interception even if provider has built-in search
-	SearchAPI         string       `json:"search_api,omitempty"`          // "brave" or "google"
-	SearchKey         string       `json:"search_key,omitempty"`          // API key for search service
-	MaxResults        int          `json:"max_results,omitempty"`         // Max search results to return (default: 10)
-
-	// Proxy configuration
-	ProxyURL string `json:"proxy_url,omitempty"` // HTTP proxy URL (e.g., "http://127.0.0.1:7897")
-
-	// Fetch configuration
-	MaxFetchSize int64 `json:"max_fetch_size,omitempty"` // Max content size for fetch in bytes (default: 1MB)
-	FetchTimeout int64 `json:"fetch_timeout,omitempty"`  // Fetch timeout in seconds (default: 30)
-	MaxURLLength int   `json:"max_url_length,omitempty"` // Max URL length (default: 2000)
-}
-
-// ToolInterceptorOverride contains provider-level overrides for tool interceptor
-type ToolInterceptorOverride struct {
-	// Disabled allows provider to explicitly disable when globally enabled
-	Disabled bool `json:"disabled,omitempty"`
-
-	// MaxResults override for this specific provider
-	MaxResults *int `json:"max_results,omitempty"`
-}
-
-// ApplyToolInterceptorDefaults applies default values to tool interceptor config
-func ApplyToolInterceptorDefaults(config *ToolInterceptorConfig) {
-	if config.MaxResults == 0 {
-		config.MaxResults = 10
-	}
-	if config.MaxFetchSize == 0 {
-		config.MaxFetchSize = 1 * 1024 * 1024 // 1MB
-	}
-	if config.FetchTimeout == 0 {
-		config.FetchTimeout = 30 // 30 seconds
-	}
-	if config.MaxURLLength == 0 {
-		config.MaxURLLength = 2000
-	}
-	// Default to duckduckgo if no search API specified
-	if config.SearchAPI == "" {
-		config.SearchAPI = "duckduckgo"
-	}
-}
-
 const (
 	ToolSourceTypeBuiltin = "builtin"
 	ToolSourceTypeMCP     = "mcp"
@@ -247,8 +202,8 @@ const (
 
 // ToolRuntimeConfig defines the generic runtime configuration for local and MCP-backed tools.
 type ToolRuntimeConfig struct {
-	Enabled    FlexibleBool     `json:"enabled,omitempty"`
-	AutoExpose FlexibleBool     `json:"auto_expose,omitempty"`
+	Enabled    FlexibleBool       `json:"enabled,omitempty"`
+	AutoExpose FlexibleBool       `json:"auto_expose,omitempty"`
 	Sources    []ToolSourceConfig `json:"sources,omitempty"`
 }
 
@@ -261,7 +216,7 @@ type ToolSourceConfig struct {
 	MCP     *MCPToolSourceConfig     `json:"mcp,omitempty"`
 }
 
-// BuiltinToolSourceConfig wraps the legacy search/fetch local tooling as a builtin runtime source.
+// BuiltinToolSourceConfig configures the builtin runtime source.
 type BuiltinToolSourceConfig struct {
 	SearchAPI    string `json:"search_api,omitempty"`
 	SearchKey    string `json:"search_key,omitempty"`
@@ -374,36 +329,6 @@ func DefaultToolRuntimeConfig() *ToolRuntimeConfig {
 	}
 	ApplyToolRuntimeDefaults(cfg)
 	return cfg
-}
-
-// ToolRuntimeConfigFromInterceptor converts the legacy search/fetch config into a builtin runtime config.
-func ToolRuntimeConfigFromInterceptor(config *ToolInterceptorConfig) *ToolRuntimeConfig {
-	if config == nil {
-		return DefaultToolRuntimeConfig()
-	}
-	ApplyToolInterceptorDefaults(config)
-	builtin := &BuiltinToolSourceConfig{
-		SearchAPI:    config.SearchAPI,
-		SearchKey:    config.SearchKey,
-		MaxResults:   config.MaxResults,
-		ProxyURL:     config.ProxyURL,
-		MaxFetchSize: config.MaxFetchSize,
-		FetchTimeout: config.FetchTimeout,
-		MaxURLLength: config.MaxURLLength,
-	}
-	ApplyBuiltinToolSourceDefaults(builtin)
-	runtimeConfig := &ToolRuntimeConfig{
-		Enabled:    true,
-		AutoExpose: true,
-		Sources: []ToolSourceConfig{{
-			ID:      "builtin",
-			Type:    ToolSourceTypeBuiltin,
-			Enabled: true,
-			Builtin: builtin,
-		}},
-	}
-	ApplyToolRuntimeDefaults(runtimeConfig)
-	return runtimeConfig
 }
 
 // IsExpired checks if the OAuth token is expired
