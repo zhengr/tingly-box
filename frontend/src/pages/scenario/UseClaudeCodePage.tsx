@@ -9,6 +9,7 @@ import {api} from '@/services/api';
 import {toggleButtonGroupStyle, toggleButtonStyle} from "@/styles/toggleStyles";
 import InfoIcon from '@mui/icons-material/Info';
 import AddIcon from '@mui/icons-material/Add';
+import Chip from '@mui/material/Chip';
 import {
     Box,
     Button,
@@ -252,21 +253,20 @@ const UseClaudeCodePage: React.FC = () => {
                     title={
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
                             <span>Claude Code</span>
+                            <Tooltip title="Create a profile to configure a separate rule set for Claude Code (only supports separate model mode)">
+                                <Chip
+                                    icon={<AddIcon />}
+                                    label={profileCount > 0 ? `Profile (${profileCount})` : 'Profile'}
+                                    onClick={() => setCreateProfileOpen(true)}
+                                    size="small"
+                                    variant="outlined"
+                                    color="primary"
+                                />
+                            </Tooltip>
                             <Tooltip title={`Base URL: ${baseUrl}/tingly/${SCENARIO}`}>
                                 <IconButton size="small" sx={{ ml: 0.5 }}>
                                     <InfoIcon fontSize="small" sx={{ color: 'text.secondary' }} />
                                 </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Create a profile to configure a separate rule set for Claude Code (only supports separate model mode)">
-                                <Button
-                                    onClick={() => setCreateProfileOpen(true)}
-                                    variant="outlined"
-                                    color="primary"
-                                    size="small"
-                                    startIcon={<AddIcon />}
-                                >
-                                    Profile{profileCount > 0 ? ` (${profileCount})` : ''}
-                                </Button>
                             </Tooltip>
                         </Box>
                     }

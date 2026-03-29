@@ -5,9 +5,13 @@ import UnifiedCard from "@/components/UnifiedCard.tsx";
 import { useProfileContext } from '@/contexts/ProfileContext';
 import { useScenarioPageInternal } from '@/pages/scenario/hooks/useScenarioPageInternal.ts';
 import { api } from '@/services/api';
+import { ContentCopy as ContentCopyIcon } from '@mui/icons-material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import InfoIcon from '@mui/icons-material/Info';
+import CodeIcon from '@mui/icons-material/Code';
+import TerminalIcon from '@mui/icons-material/Terminal';
+import Chip from '@mui/material/Chip';
 import {
     Box,
     Button,
@@ -15,6 +19,7 @@ import {
     DialogActions,
     DialogContent,
     DialogTitle,
+    Divider,
     IconButton,
     TextField,
     Tooltip,
@@ -52,6 +57,8 @@ const ClaudeCodeProfilePage: React.FC = () => {
     const [deleteProfileOpen, setDeleteProfileOpen] = useState(false);
     const [renameName, setRenameName] = useState('');
     const [isProfileMutating, setIsProfileMutating] = useState(false);
+    const [npmMode, setNpmMode] = useState(true);
+    const [appVersion, setAppVersion] = useState('');
 
     // Load rules for this profile
     useEffect(() => {
@@ -67,6 +74,11 @@ const ClaudeCodeProfilePage: React.FC = () => {
         loadData();
         return () => { isMounted = false; };
     }, [scenario]);
+
+    // Load app version for npm command
+    useEffect(() => {
+        api.getVersion().then(setAppVersion);
+    }, []);
 
     // Rename profile handler
     const handleRenameProfile = async () => {
@@ -109,9 +121,9 @@ const ClaudeCodeProfilePage: React.FC = () => {
         }
     };
 
-    const pageTitle = currentProfile
-        ? `Claude Code [${currentProfile.name}]`
-        : `Claude Code [${profileId}]`;
+    const ccCommand = npmMode && appVersion
+        ? `npx -y tingly-box@${appVersion} cc --profile ${profileId}`
+        : `tingly-box cc --profile ${profileId}`;
 
     return (
         <PageLayout loading={loadingRule} notification={notification}>
@@ -120,7 +132,8 @@ const ClaudeCodeProfilePage: React.FC = () => {
                     size="full"
                     title={
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
-                            <span>{pageTitle}</span>
+                            <span>Claude Code</span>
+                            <Chip label={currentProfile ? `${profileId} - ${currentProfile.name}` : profileId} size="small" variant="outlined" />
                             <Tooltip title={`Base URL: ${baseUrl}/tingly/${scenario}`}>
                                 <IconButton size="small" sx={{ ml: 0.5 }}>
                                     <InfoIcon fontSize="small" sx={{ color: 'text.secondary' }} />
@@ -140,7 +153,7 @@ const ClaudeCodeProfilePage: React.FC = () => {
                     }
                 >
                     <ProviderConfigCard
-                        title={pageTitle}
+                        title={`Claude Code [${profileId}]`}
                         baseUrlPath={`/tingly/${scenario}`}
                         baseUrl={baseUrl}
                         onCopy={copyToClipboard}
@@ -150,6 +163,76 @@ const ClaudeCodeProfilePage: React.FC = () => {
                         showApiKeyRow={true}
                         showBaseUrlRow={true}
                     />
+                    <Divider sx={{ mx: 2 }} />
+                    <Box sx={{ p: 2 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, maxWidth: 700 }}>
+                            <Typography
+                                variant="subtitle2"
+                                color="text.secondary"
+                                sx={{ minWidth: 190, flexShrink: 0, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 0.5 }}
+                            >
+                                <TerminalIcon sx={{ fontSize: '1rem' }} />
+                                Quick Start
+                            </Typography>
+                            <Typography
+                                variant="subtitle2"
+                                onClick={() => copyToClipboard(ccCommand, 'command')}
+                                sx={{
+                                    fontFamily: 'monospace',
+                                    fontSize: '0.75rem',
+                                    color: 'primary.main',
+                                    flex: 1,
+                                    minWidth: 0,
+                                    cursor: 'pointer',
+                                    '&:hover': {
+                                        textDecoration: 'underline',
+                                        backgroundColor: 'action.hover'
+                                    },
+                                    padding: 1,
+                                    borderRadius: 1,
+                                    transition: 'all 0.2s ease-in-out'
+                                }}
+                                title="Click to copy command"
+                            >
+                                {ccCommand}
+                            </Typography>
+                            <Box sx={{ display: 'flex', gap: 0.5, ml: 'auto' }}>
+                                <Tooltip title={npmMode ? 'Switch to global command' : 'Switch to npm command'}>
+                                    <IconButton
+                                        onClick={() => setNpmMode(!npmMode)}
+                                        size="small"
+                                        color={npmMode ? "primary" : "default"}
+                                        sx={{ position: 'relative' }}
+                                    >
+                                        {npmMode ? (
+                                            <Box
+                                                sx={{
+                                                    width: 20,
+                                                    height: 20,
+                                                    borderRadius: '50%',
+                                                    backgroundColor: 'success.main',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                }}
+                                            >
+                                                <Typography sx={{ fontSize: '12px', lineHeight: 1, color: 'background.paper', fontWeight: 'bold' }}>
+                                                    n
+                                                </Typography>
+                                            </Box>
+                                        ) : (
+                                            <CodeIcon fontSize="small" />
+                                        )}
+                                    </IconButton>
+                                </Tooltip>
+                                <Tooltip title="Copy command">
+                                    <IconButton size="small" onClick={() => copyToClipboard(ccCommand, 'command')}>
+                                        <ContentCopyIcon fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
+                            </Box>
+                        </Box>
+                    </Box>
                 </UnifiedCard>
 
                 <TemplatePage
@@ -168,9 +251,14 @@ const ClaudeCodeProfilePage: React.FC = () => {
                     onClose={() => setRenameProfileOpen(false)}
                     maxWidth="xs"
                     fullWidth
+                    slotProps={{
+                        paper: {
+                            sx: { overflow: 'visible' }
+                        }
+                    }}
                 >
                     <DialogTitle>Rename Profile</DialogTitle>
-                    <DialogContent>
+                    <DialogContent sx={{ pt: 1 }}>
                         <TextField
                             autoFocus
                             fullWidth
@@ -179,6 +267,7 @@ const ClaudeCodeProfilePage: React.FC = () => {
                             onChange={(e) => setRenameName(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleRenameProfile()}
                             size="small"
+                            margin="dense"
                         />
                     </DialogContent>
                     <DialogActions sx={{ px: 3, pb: 2, gap: 1, justifyContent: 'flex-end' }}>
@@ -199,7 +288,7 @@ const ClaudeCodeProfilePage: React.FC = () => {
                     fullWidth
                 >
                     <DialogTitle>Delete Profile</DialogTitle>
-                    <DialogContent>
+                    <DialogContent sx={{ pt: 3 }}>
                         <Typography variant="body1">
                             Are you sure you want to delete profile <strong>{currentProfile?.name || profileId}</strong>?
                         </Typography>

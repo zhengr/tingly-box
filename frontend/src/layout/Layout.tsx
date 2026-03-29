@@ -151,7 +151,7 @@ const Layout = ({ children }: LayoutProps) => {
         const profileNavItems: NavItem[] = claudeCodeProfiles.map(p => ({
             path: `/use-claude-code/profile/${p.id}`,
             label: 'Claude Code',
-            subtitle: p.name,
+            subtitle: `${p.id} - ${p.name}`,
             icon: <Claude size={20} />,
         }));
 
