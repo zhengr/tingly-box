@@ -21,6 +21,7 @@ import {
     DialogTitle,
     Divider,
     IconButton,
+    Stack,
     TextField,
     Tooltip,
     Typography
@@ -136,9 +137,8 @@ const ClaudeCodeProfilePage: React.FC = () => {
                     title={
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
                             <span>Claude Code</span>
-                            <Chip label={currentProfile ? `${profileId} - ${currentProfile.name}` : profileId} size="small" variant="outlined" />
                             <Tooltip title={`Base URL: ${baseUrl}/tingly/${scenario}`}>
-                                <IconButton size="small" sx={{ ml: 0.5 }}>
+                                <IconButton size="small">
                                     <InfoIcon fontSize="small" sx={{ color: 'text.secondary' }} />
                                 </IconButton>
                             </Tooltip>
@@ -154,27 +154,17 @@ const ClaudeCodeProfilePage: React.FC = () => {
                             </Tooltip>
                         </Box>
                     }
+                    rightAction={
+                        <Chip label={currentProfile ? `${profileId} - ${currentProfile.name}` : profileId} size="small" variant="outlined" />
+                    }
                 >
-                    <ProviderConfigCard
-                        title={`Claude Code [${profileId}]`}
-                        baseUrlPath={`/tingly/${scenario}`}
-                        baseUrl={baseUrl}
-                        onCopy={copyToClipboard}
-                        token={token}
-                        onShowTokenModal={() => setShowTokenModal(true)}
-                        scenario={scenario}
-                        showApiKeyRow={true}
-                        showBaseUrlRow={true}
-                    />
-                    <Divider sx={{ mx: 2 }} />
-                    <Box sx={{ p: 2 }}>
+                    <Box sx={{ px: 2, pb: 1.5 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, maxWidth: 700 }}>
                             <Typography
                                 variant="subtitle2"
                                 color="text.secondary"
-                                sx={{ minWidth: 190, flexShrink: 0, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 0.5 }}
+                                sx={{ minWidth: 190, flexShrink: 0, fontWeight: 500 }}
                             >
-                                <TerminalIcon sx={{ fontSize: '1rem' }} />
                                 {t('claudeCode.profile.quickStart')}
                             </Typography>
                             <Typography
@@ -199,7 +189,7 @@ const ClaudeCodeProfilePage: React.FC = () => {
                             >
                                 {ccCommand}
                             </Typography>
-                            <Box sx={{ display: 'flex', gap: 0.5, ml: 'auto' }}>
+                            <Stack direction="row" spacing={0.5} sx={{ flexShrink: 0, ml: 'auto' }}>
                                 <Tooltip title={npmMode ? t('claudeCode.profile.switchToGlobal') : t('claudeCode.profile.switchToNpm')}>
                                     <IconButton
                                         onClick={() => setNpmMode(!npmMode)}
@@ -233,9 +223,22 @@ const ClaudeCodeProfilePage: React.FC = () => {
                                         <ContentCopyIcon fontSize="small" />
                                     </IconButton>
                                 </Tooltip>
-                            </Box>
+                            </Stack>
                         </Box>
                     </Box>
+                    <Divider sx={{ mx: 2 }} />
+                    <ProviderConfigCard
+                        title={`Claude Code [${profileId}]`}
+                        baseUrlPath={`/tingly/${scenario}`}
+                        baseUrl={baseUrl}
+                        onCopy={copyToClipboard}
+                        token={token}
+                        onShowTokenModal={() => setShowTokenModal(true)}
+                        scenario={scenario}
+                        showApiKeyRow={true}
+                        showBaseUrlRow={true}
+                    />
+                    <Divider sx={{ mx: 2, mt: 1.5 }} />
                 </UnifiedCard>
 
                 <TemplatePage
