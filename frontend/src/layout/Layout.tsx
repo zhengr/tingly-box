@@ -1,4 +1,4 @@
-import { OpenAI, Anthropic, Claude, Telegram, Feishu, Lark, DingTalk, Weixin } from '../components/BrandIcons';
+import { OpenAI, Anthropic, Claude, OpenCode, Xcode, VSCode, Telegram, Feishu, Lark, DingTalk, Weixin } from '../components/BrandIcons';
 import tingyIcon from '../assets/logos/icon.png';
 import {
     AccountCircle as AccountIcon,
@@ -11,7 +11,6 @@ import {
     DateRange as DateRangeIcon,
     ErrorOutline,
     GridOn as GridOnIcon,
-    LaptopMac,
     ListAlt as LogsIcon,
     Menu as MenuIcon,
     NewReleases,
@@ -21,7 +20,6 @@ import {
     Settings as SystemIcon,
     Today as TodayIcon,
     Send as UserPromptIcon,
-    Extension as VSCodeIcon,
     Security as AccessControlIcon,
 } from '@mui/icons-material';
 import LockIcon from '@mui/icons-material/Lock';
@@ -280,17 +278,17 @@ const Layout = ({ children }: LayoutProps) => {
                     {
                         path: '/use-opencode',
                         label: t('layout.nav.useOpenCode', { defaultValue: 'OpenCode' }),
-                        icon: <CodeIcon sx={{ fontSize: 20 }} />,
+                        icon: <OpenCode size={20} />,
                     },
                     {
                         path: '/use-xcode',
                         label: t('layout.nav.useXcode', { defaultValue: 'Xcode' }),
-                        icon: <LaptopMac sx={{ fontSize: 20 }} />,
+                        icon: <Xcode size={20} />,
                     },
                     {
                         path: '/use-vscode',
                         label: t('layout.nav.useVSCode', { defaultValue: 'VS Code' }),
-                        icon: <VSCodeIcon sx={{ fontSize: 20 }} />,
+                        icon: <VSCode size={20} />,
                     },
                 ],
             },
@@ -725,6 +723,12 @@ const Layout = ({ children }: LayoutProps) => {
                                     ...(!isAddProfile && isActive(item.path) && {
                                         backgroundColor: 'primary.main',
                                         color: 'primary.contrastText',
+                                        '& img': { filter: 'none !important' },
+                                        '& .MuiListItemIcon-root > div': {
+                                            bgcolor: 'white',
+                                            borderRadius: 0.5,
+                                            p: 0.25,
+                                        },
                                         '&::before': {
                                             content: '""',
                                             position: 'absolute',
