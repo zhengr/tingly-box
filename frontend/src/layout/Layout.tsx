@@ -241,23 +241,7 @@ const Layout = ({ children }: LayoutProps) => {
                 label: t('layout.nav.home'),
                 children: [
                     {
-                        path: '/use-openai',
-                        label: t('layout.nav.useOpenAI', { defaultValue: 'OpenAI' }),
-                        icon: <OpenAI size={20} />,
-                    },
-                    {
-                        path: '/use-anthropic',
-                        label: t('layout.nav.useAnthropic', { defaultValue: 'Anthropic' }),
-                        icon: <Anthropic size={20} />,
-                    },
-                    {
-                        divider: true,
-                        path: '/use-agent',
-                        label: 'Claw | Agent',
-                        icon: <AutoAwesome sx={{ fontSize: 20 }} />,
-                    },
-                    {
-                        divider: true,
+                        // divider: true,
                         path: '/use-claude-code',
                         subtitle: "default",
                         label: t('layout.nav.useClaudeCode', { defaultValue: 'Claude Code' }),
@@ -289,6 +273,23 @@ const Layout = ({ children }: LayoutProps) => {
                         path: '/use-vscode',
                         label: t('layout.nav.useVSCode', { defaultValue: 'VS Code' }),
                         icon: <VSCode size={20} />,
+                    },
+                    {
+                        divider: true,
+                        path: '/use-openai',
+                        label: t('layout.nav.useOpenAI', { defaultValue: 'OpenAI' }),
+                        icon: <OpenAI size={20} />,
+                    },
+                    {
+                        path: '/use-anthropic',
+                        label: t('layout.nav.useAnthropic', { defaultValue: 'Anthropic' }),
+                        icon: <Anthropic size={20} />,
+                    },
+                    {
+                        divider: true,
+                        path: '/use-agent',
+                        label: 'OpenClaw',
+                        icon: <AutoAwesome sx={{ fontSize: 20 }} />,
                     },
                 ],
             },
