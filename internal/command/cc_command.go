@@ -30,7 +30,7 @@ so the existing Claude Code configuration is not modified.
 
 Profiles can be used to switch between different rule sets for the same scenario.`,
 		DisableFlagParsing: true,
-		Args:              cobra.ArbitraryArgs,
+		Args:               cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Re-parse flags: everything before "--" belongs to tingly-box,
 			// everything after is passthrough to claude.
@@ -135,7 +135,7 @@ func runCC(appManager *AppManager, profile string, unified bool, claudeArgs []st
 	if profileID != "" {
 		envUnified = false
 	}
-	env := generateCCEnv(baseURL, apiKey, scenarioPath, envUnified)
+	env := generateCCEnv(baseURL, apiKey, scenarioPath, envUnified, profileID != "")
 
 	// Build settings file
 	var settingsPath string
@@ -277,7 +277,8 @@ func buildTempSettings(env map[string]string) (string, error) {
 }
 
 // generateCCEnv builds the env vars map for Claude Code settings.
-func generateCCEnv(baseURL, apiKey, scenarioPath string, unified bool) map[string]string {
+// When isProfile is true, model names use short names (e.g. "default") instead of "tingly/cc-default".
+func generateCCEnv(baseURL, apiKey, scenarioPath string, unified bool, isProfile bool) map[string]string {
 	env := map[string]string{
 		"DISABLE_TELEMETRY":                        "1",
 		"DISABLE_ERROR_REPORTING":                  "1",
@@ -293,6 +294,12 @@ func generateCCEnv(baseURL, apiKey, scenarioPath string, unified bool) map[strin
 		env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = "tingly/cc"
 		env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = "tingly/cc"
 		env["CLAUDE_CODE_SUBAGENT_MODEL"] = "tingly/cc"
+	} else if isProfile {
+		env["ANTHROPIC_MODEL"] = "default"
+		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = "haiku"
+		env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = "opus"
+		env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = "sonnet"
+		env["CLAUDE_CODE_SUBAGENT_MODEL"] = "subagent"
 	} else {
 		env["ANTHROPIC_MODEL"] = "tingly/cc-default"
 		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = "tingly/cc-haiku"

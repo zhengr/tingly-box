@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -1355,6 +1356,12 @@ func (c *Config) CreateProfile(baseScenario typ.RuleScenario, name string) (typ.
 			cloned := rule
 			cloned.UUID = uuid.New().String()
 			cloned.Scenario = profiledScenario
+			// Strip "tingly/cc-" prefix for profile rules (e.g. "tingly/cc-default" -> "default")
+			if strings.HasPrefix(cloned.RequestModel, "tingly/cc-") {
+				cloned.RequestModel = strings.TrimPrefix(cloned.RequestModel, "tingly/cc-")
+			} else if cloned.RequestModel == "tingly/cc" {
+				continue // skip unified model name
+			}
 			c.Rules = append(c.Rules, cloned)
 		}
 	}
