@@ -73,7 +73,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/tingly-dev/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/zhengr/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=${{ steps.version.outputs.tag }}
             type=raw,value=${{ steps.version.outputs.npm_version }}
@@ -99,11 +99,11 @@ jobs:
           ## Docker Image Published :rocket:
 
           **Tag:** `${{ steps.version.outputs.tag }}`
-          **Image:** `${{ env.REGISTRY }}/tingly-dev/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}`
+          **Image:** `${{ env.REGISTRY }}/zhengr/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}`
 
           ### Pull Command
           ```bash
-          docker pull ${{ env.REGISTRY }}/tingly-dev/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}
+          docker pull ${{ env.REGISTRY }}/zhengr/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}
           ```
 
           ### Run Command
@@ -113,6 +113,6 @@ jobs:
             --name tingly-box \
             -p 12580:12580 \
             -v `pwd`/tingly-data:/app/.tingly-box \
-            ${{ env.REGISTRY }}/tingly-dev/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}
+            ${{ env.REGISTRY }}/zhengr/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}
           ```
           EOF
