@@ -270,7 +270,7 @@ jobs:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           gh workflow run docker-npx.yml \
-            --repo tingly-dev/tingly-box \
+            --repo zhengr/tingly-box \
             --ref "${{ needs.setup.outputs.release_tag }}" \
             -f release_tag="${{ needs.setup.outputs.release_tag }}"
           echo "Triggered docker-npx.yml workflow"
@@ -330,7 +330,7 @@ jobs:
           cat > npx_release_notes.md << NOTES_EOF
           ## 📦 NPX Package Release - $VERSION
 
-          Based on GitHub Release: [${RELEASE_TAG}](https://github.com/tingly-dev/tingly-box/releases/tag/${RELEASE_TAG})
+          Based on GitHub Release: [${RELEASE_TAG}](https://github.com/zhengr/tingly-box/releases/tag/${RELEASE_TAG})
 
           ### 🚀 Installation
 
@@ -374,7 +374,7 @@ jobs:
           fi
 
           cat >> npx_release_notes.md << FOOTER2_EOF
-          - 🏷️ [Source Release](https://github.com/tingly-dev/tingly-box/releases/tag/$RELEASE_TAG)
+          - 🏷️ [Source Release](https://github.com/zhengr/tingly-box/releases/tag/$RELEASE_TAG)
 
           ---
           _NPX package automatically published based on release $RELEASE_TAG_
@@ -498,7 +498,7 @@ jobs:
           cat > npx_release_notes.md << EOF
           ## 📦 NPX Package Release - $VERSION ($PKG_TYPE)
 
-          Based on GitHub Release: [${RELEASE_TAG}](https://github.com/tingly-dev/tingly-box/releases/tag/${RELEASE_TAG})
+          Based on GitHub Release: [${RELEASE_TAG}](https://github.com/zhengr/tingly-box/releases/tag/${RELEASE_TAG})
 
           ### 🚀 Installation
 
@@ -512,7 +512,7 @@ jobs:
 
           ### 🔗 Links
           - 📦 [View on npm](https://www.npmjs.com/package/$PKG_NAME/v/$VERSION)
-          - 🏷️ [Source Release](https://github.com/tingly-dev/tingly-box/releases/tag/$RELEASE_TAG)
+          - 🏷️ [Source Release](https://github.com/zhengr/tingly-box/releases/tag/$RELEASE_TAG)
 
           ---
           _This NPX package was automatically published based on release $RELEASE_TAG_
