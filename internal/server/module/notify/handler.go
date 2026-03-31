@@ -96,6 +96,14 @@ func buildMessage(input ClaudeCodeHookInput) (string, string) {
 		}
 		return title, msg
 
+	case "PreToolUse":
+		title := "Claude Code · " + cwd
+		msg := input.ToolName
+		if msg == "" {
+			msg = "Waiting for input"
+		}
+		return title, msg
+
 	case "PostToolUse":
 		title := "Claude Code · " + cwd
 		msg := input.ToolName
