@@ -3,8 +3,10 @@ package server
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
+	"mime"
 	"net/http"
 	"strings"
 	"sync"
@@ -20,7 +22,9 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/server/config"
 	"github.com/tingly-dev/tingly-box/internal/server/module/configapply"
 	"github.com/tingly-dev/tingly-box/internal/server/module/imbot"
+	notifymodule "github.com/tingly-dev/tingly-box/internal/server/module/notify"
 	oauthmodule "github.com/tingly-dev/tingly-box/internal/server/module/oauth"
+	providerQuotaModule "github.com/tingly-dev/tingly-box/internal/server/module/provider_quota"
 	"github.com/tingly-dev/tingly-box/internal/server/module/providertemplate"
 	rulemodule "github.com/tingly-dev/tingly-box/internal/server/module/rule"
 	"github.com/tingly-dev/tingly-box/internal/server/module/scenario"
@@ -56,10 +60,6 @@ func GetGlobalServer() *Server {
 // Init sets up Server routes and templates on the main server engine
 func (s *Server) UseUIEndpoints(ctx context.Context) {
 
-	// SPA routes - serve index.html for all frontend routes (catch-all)
-	// This allows React Router to handle client-side routing
-	s.engine.GET("/:page", s.UseIndexHTML)
-
 	// API endpoints are handled separately and won't match this pattern
 	// Admin/backend routes that need their own pages:
 	// - /provider, /api-keys, /oauth, /routing, /system, /history etc.
@@ -72,6 +72,10 @@ func (s *Server) UseUIEndpoints(ctx context.Context) {
 	// These must be registered before the /tingly/:scenario routes
 	statusHandler := statusline.NewHandler(s.config, s.loadBalancer, statusline.NewCache())
 	statusline.RegisterRoutes(s.engine, statusHandler)
+
+	// Claude Code notification hook endpoint (no auth required)
+	notifyHandler := notifymodule.NewHandler()
+	notifymodule.RegisterRoutes(s.engine, notifyHandler)
 
 	// Create route manager
 	manager := swagger.NewRouteManager(s.engine)
@@ -107,6 +111,15 @@ func (s *Server) UseUIEndpoints(ctx context.Context) {
 	// Config apply API routes
 	configapplyHandler := configapply.NewHandler(s.config, s.host)
 	configapply.RegisterRoutes(apiV1, configapplyHandler)
+
+	// Provider quota API routes
+	if s.quotaManager != nil {
+		if qm, ok := s.quotaManager.(providerQuotaModule.Manager); ok {
+			quotaHandler := providerQuotaModule.NewHandler(qm, logrus.StandardLogger())
+			quotaHandler.RegisterRoutes(apiV1.Router)
+			logrus.Info("Provider quota API routes registered")
+		}
+	}
 
 	// Static files and templates - try embedded assets first, fallback to filesystem
 	s.useWebStaticEndpoints(s.engine)
@@ -267,7 +280,24 @@ func (s *Server) HandleProbeModel(c *gin.Context) {
 }
 
 func (s *Server) UseIndexHTML(c *gin.Context) {
-	c.FileFromFS("web/dist/index.html", http.FS(assets.WebDistAssets))
+	c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
+
+	f, err := assets.WebDistAssets.Open("web/dist/index.html")
+	if err != nil {
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+
+	data, err := io.ReadAll(f)
+	if err != nil {
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+
+	c.Data(http.StatusOK, "text/html; charset=utf-8", data)
 }
 
 func (s *Server) GetStatus(c *gin.Context) {
@@ -929,8 +959,9 @@ func (s *Server) useWebStaticEndpoints(engine *gin.Engine) {
 	st, _ := fs.Sub(assets.WebDistAssets, "web/dist/assets")
 	engine.StaticFS("/assets", http.FS(st))
 
-	engine.StaticFile("/icon.svg", "web/dist/icon.svg")
-
+	// SPA catch-all - must be registered LAST
+	// Serves index.html for all non-API frontend routes, letting React Router handle navigation
+	// NoRoute handles unmatched paths including nested routes like /provider/settings/detail/123
 	engine.NoRoute(func(c *gin.Context) {
 		// Don't serve index.html for API routes - let them return 404s
 		path := c.Request.URL.Path
@@ -948,17 +979,16 @@ func (s *Server) useWebStaticEndpoints(engine *gin.Engine) {
 			return
 		}
 
-		// For all other routes, serve the SPA index.html
-		data, err := assets.WebDistAssets.ReadFile("web/dist/index.html")
-		if err != nil {
-			c.AbortWithError(http.StatusInternalServerError, err)
-			return
-		}
-		c.Data(http.StatusOK, "text/html; charset=utf-8", data)
+		s.UseIndexHTML(c)
 	})
 }
 
 // GetShutdownChannel returns the shutdown channel for the main process to listen on
 func GetShutdownChannel() <-chan struct{} {
 	return shutdownChan
+}
+
+func init() {
+	mime.AddExtensionType(".svg", "image/svg+xml")
+	mime.AddExtensionType(".png", "image/png")
 }

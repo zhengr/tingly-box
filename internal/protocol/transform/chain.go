@@ -6,6 +6,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/responses"
+	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/typ"
 )
 
@@ -15,7 +16,27 @@ import (
 type RequestUnionConstraint interface {
 	*anthropic.MessageNewParams | *anthropic.BetaMessageNewParams |
 		*openai.ChatCompletionNewParams | *responses.ResponseNewParams |
-		*GoogleRequest
+		*protocol.GoogleRequest
+}
+
+// TransformConfig holds structured, type-safe configuration for the transform chain.
+// Use With* option constructors to set these values.
+type TransformConfig struct {
+	// MaxTokens is the maximum output tokens allowed for the request.
+	// Used by base transform when converting between protocols.
+	MaxTokens int64
+
+	// UserID is the OAuth user ID for authenticated requests.
+	UserID string
+
+	// Device is the device identifier (e.g., Claude Code device ID).
+	Device string
+
+	// OpenAIConfig holds OpenAI-specific configuration populated during transforms.
+	OpenAIConfig *protocol.OpenAIConfig
+
+	// ResponsesConfig holds Responses API-specific configuration populated during transforms.
+	ResponsesConfig *protocol.OpenAIConfig
 }
 
 // TransformOption configures a TransformContext
@@ -46,6 +67,21 @@ func WithExtra(extra map[string]interface{}) TransformOption {
 	return func(ctx *TransformContext) { ctx.Extra = extra }
 }
 
+// WithMaxTokens sets the maximum output tokens in the transform config.
+func WithMaxTokens(maxTokens int64) TransformOption {
+	return func(ctx *TransformContext) { ctx.Config.MaxTokens = maxTokens }
+}
+
+// WithUserID sets the OAuth user ID in the transform config.
+func WithUserID(userID string) TransformOption {
+	return func(ctx *TransformContext) { ctx.Config.UserID = userID }
+}
+
+// WithDevice sets the device identifier in the transform config.
+func WithDevice(device string) TransformOption {
+	return func(ctx *TransformContext) { ctx.Config.Device = device }
+}
+
 // Transform defines the interface for a single transformation step
 type Transform interface {
 	// Name returns the unique identifier for this transform
@@ -58,6 +94,12 @@ type Transform interface {
 
 // TransformContext carries state through the transform chain
 type TransformContext struct {
+	SourceAPI protocol.APIType
+	TargetAPI protocol.APIType
+
+	RequestModel  string
+	ResponseModel string
+
 	// Request is the request being transformed.
 	// Use SetRequest[T]() to update — only types satisfying RequestUnionConstraint are accepted.
 	Request interface{}
@@ -80,6 +122,9 @@ type TransformContext struct {
 
 	// TransformSteps records the names of transforms that have been applied
 	TransformSteps []string
+
+	// Config holds structured, type-safe configuration for the transform chain.
+	Config TransformConfig
 
 	// Extra allows transforms to pass arbitrary data through the chain
 	Extra map[string]interface{}
@@ -113,6 +158,23 @@ func NewTransformContext[T RequestUnionConstraint](request T, opts ...TransformO
 // will result in a compile-time error.
 func SetRequest[T RequestUnionConstraint](ctx *TransformContext, req T) {
 	ctx.Request = req
+}
+
+// configExtraForMetadata builds a legacy extra map from Config fields
+// for metadata transforms that still use map[string]any.
+func (ctx *TransformContext) configExtraForMetadata() map[string]any {
+	extra := map[string]any{}
+	if ctx.Config.UserID != "" {
+		extra["user_id"] = ctx.Config.UserID
+	}
+	if ctx.Config.Device != "" {
+		extra["device"] = ctx.Config.Device
+	}
+	// Merge any existing Extra entries (for backward compat with cursor_compat etc.)
+	for k, v := range ctx.Extra {
+		extra[k] = v
+	}
+	return extra
 }
 
 // TransformChain manages an ordered sequence of transforms

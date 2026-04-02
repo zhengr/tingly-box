@@ -47,12 +47,12 @@ func newAnthropicBetaRequest(model string, maxTokens int64) *anthropic.BetaMessa
 }
 
 func TestBaseTransform_Name(t *testing.T) {
-	bt := NewBaseTransform(TargetAPIStyleOpenAIChat)
+	bt := NewBaseTransform(protocol.TypeOpenAIChat)
 	assert.Equal(t, "base_convert", bt.Name())
 }
 
 func TestBaseTransform_ConvertAnthropicV1ToOpenAIChat(t *testing.T) {
-	bt := NewBaseTransform(TargetAPIStyleOpenAIChat)
+	bt := NewBaseTransform(protocol.TypeOpenAIChat)
 
 	ctx := newBaseContext()
 	ctx.Request = newAnthropicV1Request("claude-3-5-sonnet-20241022", 1024)
@@ -65,14 +65,14 @@ func TestBaseTransform_ConvertAnthropicV1ToOpenAIChat(t *testing.T) {
 	assert.Equal(t, "claude-3-5-sonnet-20241022", string(openaiReq.Model))
 	assert.Equal(t, int64(1024), openaiReq.MaxTokens.Value)
 
-	config, ok := ctx.Extra["openaiConfig"].(*protocol.OpenAIConfig)
-	require.True(t, ok)
+	config := ctx.Config.OpenAIConfig
+	require.NotNil(t, config)
 	assert.False(t, config.HasThinking)
 	assert.Equal(t, "low", string(config.ReasoningEffort))
 }
 
 func TestBaseTransform_ConvertAnthropicBetaToOpenAIChat(t *testing.T) {
-	bt := NewBaseTransform(TargetAPIStyleOpenAIChat)
+	bt := NewBaseTransform(protocol.TypeOpenAIChat)
 
 	ctx := newBaseContext()
 	ctx.Request = newAnthropicBetaRequest("claude-3-5-sonnet-20241022", 2048)
@@ -87,7 +87,7 @@ func TestBaseTransform_ConvertAnthropicBetaToOpenAIChat(t *testing.T) {
 }
 
 func TestBaseTransform_AlreadyOpenAIChat(t *testing.T) {
-	bt := NewBaseTransform(TargetAPIStyleOpenAIChat)
+	bt := NewBaseTransform(protocol.TypeOpenAIChat)
 
 	ctx := newBaseContext()
 	ctx.Request = newOpenAIRequest("gpt-4", 1024)
@@ -96,14 +96,14 @@ func TestBaseTransform_AlreadyOpenAIChat(t *testing.T) {
 	require.NoError(t, err)
 	assert.Same(t, ctx.Request, ctx.Request)
 
-	config, ok := ctx.Extra["openaiConfig"].(*protocol.OpenAIConfig)
-	require.True(t, ok)
+	config := ctx.Config.OpenAIConfig
+	require.NotNil(t, config)
 	assert.False(t, config.HasThinking)
 	assert.Equal(t, "none", string(config.ReasoningEffort))
 }
 
 func TestBaseTransform_DisableStreamUsage(t *testing.T) {
-	bt := NewBaseTransform(TargetAPIStyleOpenAIChat)
+	bt := NewBaseTransform(protocol.TypeOpenAIChat)
 
 	ctx := newBaseContext()
 	ctx.Request = newAnthropicV1Request("claude-3-5-sonnet-20241022", 1024)
@@ -119,7 +119,7 @@ func TestBaseTransform_DisableStreamUsage(t *testing.T) {
 }
 
 func TestBaseTransform_UnsupportedRequestType(t *testing.T) {
-	bt := NewBaseTransform(TargetAPIStyleOpenAIChat)
+	bt := NewBaseTransform(protocol.TypeOpenAIChat)
 
 	ctx := newBaseContext()
 	ctx.Request = "invalid type"

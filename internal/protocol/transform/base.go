@@ -8,18 +8,17 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/tingly-dev/tingly-box/internal/protocol"
 	"github.com/tingly-dev/tingly-box/internal/protocol/request"
-	"google.golang.org/genai"
 )
 
 // BaseTransform handles protocol conversion from original format to target API style
 // This is the first transform in the chain, converting the request format before
 // consistency normalization and vendor-specific adjustments.
 type BaseTransform struct {
-	targetType TargetAPIStyle
+	targetType protocol.APIType
 }
 
 // NewBaseTransform creates a new BaseTransform with the specified target API style
-func NewBaseTransform(targetType TargetAPIStyle) *BaseTransform {
+func NewBaseTransform(targetType protocol.APIType) *BaseTransform {
 	return &BaseTransform{
 		targetType: targetType,
 	}
@@ -50,15 +49,15 @@ func (t *BaseTransform) Apply(ctx *TransformContext) error {
 
 	// Determine if conversion is needed by checking BOTH input type AND target type
 	switch t.targetType {
-	case TargetAPIStyleOpenAIChat:
+	case protocol.TypeOpenAIChat:
 		return t.convertToOpenAIChat(ctx, disableStreamUsage)
-	case TargetAPIStyleOpenAIResponses:
+	case protocol.TypeOpenAIResponses:
 		return t.convertToOpenAIResponses(ctx, disableStreamUsage)
-	case TargetAPIStyleAnthropicV1:
+	case protocol.TypeAnthropicV1:
 		return t.convertToAnthropicV1(ctx)
-	case TargetAPIStyleAnthropicBeta:
+	case protocol.TypeAnthropicBeta:
 		return t.convertToAnthropicBeta(ctx)
-	case TargetAPIStyleGoogle:
+	case protocol.TypeGoogle:
 		return t.convertToGoogle(ctx)
 	default:
 		return fmt.Errorf("unknown target API style: %s", t.targetType)
@@ -78,7 +77,7 @@ func (t *BaseTransform) convertToOpenAIChat(ctx *TransformContext, disableStream
 			disableStreamUsage,
 		)
 		ctx.Request = openaiReq
-		ctx.Extra["openaiConfig"] = config
+		ctx.Config.OpenAIConfig = config
 
 	case *anthropic.BetaMessageNewParams:
 		// Anthropic beta request
@@ -89,27 +88,25 @@ func (t *BaseTransform) convertToOpenAIChat(ctx *TransformContext, disableStream
 			disableStreamUsage,
 		)
 		ctx.Request = openaiReq
-		ctx.Extra["openaiConfig"] = config
+		ctx.Config.OpenAIConfig = config
 
 	case *openai.ChatCompletionNewParams:
 		// Already in OpenAI Chat format, no conversion needed
 		// Still create a default config for consistency
-		config := &protocol.OpenAIConfig{
+		ctx.Config.OpenAIConfig = &protocol.OpenAIConfig{
 			HasThinking:     false,
 			ReasoningEffort: "none",
 		}
-		ctx.Extra["openaiConfig"] = config
 
 	case *responses.ResponseNewParams:
 		// OpenAI Responses API request - convert to Chat format
-		chatReq := request.ConvertOpenAIResponsesToChat(*req, 0)
+		chatReq := request.ConvertOpenAIResponsesToChat(*req, ctx.Config.MaxTokens)
 		ctx.Request = chatReq
 		// Create a default config for consistency
-		config := &protocol.OpenAIConfig{
+		ctx.Config.OpenAIConfig = &protocol.OpenAIConfig{
 			HasThinking:     false,
 			ReasoningEffort: "none",
 		}
-		ctx.Extra["openaiConfig"] = config
 
 	default:
 		return fmt.Errorf("unsupported request type for OpenAI Chat conversion: %T", ctx.Request)
@@ -129,8 +126,7 @@ func (t *BaseTransform) convertToOpenAIResponses(ctx *TransformContext, disableS
 		// Anthropic v1 request
 		responsesReq := request.ConvertAnthropicV1ToResponsesRequest(req)
 		ctx.Request = &responsesReq
-		// Store minimal config for Responses API
-		ctx.Extra["responsesConfig"] = &protocol.OpenAIConfig{
+		ctx.Config.ResponsesConfig = &protocol.OpenAIConfig{
 			HasThinking:     false,
 			ReasoningEffort: "none",
 		}
@@ -139,8 +135,7 @@ func (t *BaseTransform) convertToOpenAIResponses(ctx *TransformContext, disableS
 		// Anthropic beta request
 		responsesReq := request.ConvertAnthropicBetaToResponsesRequest(req)
 		ctx.Request = &responsesReq
-		// Store minimal config for Responses API
-		ctx.Extra["responsesConfig"] = &protocol.OpenAIConfig{
+		ctx.Config.ResponsesConfig = &protocol.OpenAIConfig{
 			HasThinking:     false,
 			ReasoningEffort: "none",
 		}
@@ -153,11 +148,10 @@ func (t *BaseTransform) convertToOpenAIResponses(ctx *TransformContext, disableS
 	case *responses.ResponseNewParams:
 		// Already in Responses API format, no conversion needed
 		// Still create a default config for consistency
-		config := &protocol.OpenAIConfig{
+		ctx.Config.ResponsesConfig = &protocol.OpenAIConfig{
 			HasThinking:     false,
 			ReasoningEffort: "none",
 		}
-		ctx.Extra["responsesConfig"] = config
 
 	default:
 		return fmt.Errorf("unsupported request type for Responses API conversion: %T", ctx.Request)
@@ -182,22 +176,15 @@ func (t *BaseTransform) convertToAnthropicV1(ctx *TransformContext) error {
 
 	case *openai.ChatCompletionNewParams:
 		// OpenAI Chat to Anthropic v1 conversion
-		anthropicReq := request.ConvertOpenAIToAnthropicRequest(
+		ctx.Request = request.ConvertOpenAIToAnthropicRequest(
 			req,
 			4096, // defaultMaxTokens - this could be made configurable
 		)
-		ctx.Request = &anthropicReq
 		return nil
 
 	case *responses.ResponseNewParams:
 		// OpenAI Responses to Anthropic v1 conversion
-		// Convert Responses to Chat first, then to Anthropic
-		chatReq := request.ConvertOpenAIResponsesToChat(*req, 0)
-		anthropicReq := request.ConvertOpenAIToAnthropicRequest(
-			chatReq,
-			4096, // defaultMaxTokens
-		)
-		ctx.Request = &anthropicReq
+		ctx.Request = request.ConvertOpenAIResponsesToAnthropicRequest(*req, ctx.Config.MaxTokens)
 		return nil
 
 	default:
@@ -208,7 +195,7 @@ func (t *BaseTransform) convertToAnthropicV1(ctx *TransformContext) error {
 // convertToAnthropicBeta converts the request to Anthropic beta format
 func (t *BaseTransform) convertToAnthropicBeta(ctx *TransformContext) error {
 	// Detect request type and convert accordingly
-	switch ctx.Request.(type) {
+	switch req := ctx.Request.(type) {
 	case *anthropic.BetaMessageNewParams:
 		// Already in Anthropic beta format, no conversion needed
 		// Consistency transform will handle normalization
@@ -221,25 +208,18 @@ func (t *BaseTransform) convertToAnthropicBeta(ctx *TransformContext) error {
 
 	case *openai.ChatCompletionNewParams:
 		// OpenAI Chat to Anthropic beta conversion
-		// This conversion is not yet implemented
-		return fmt.Errorf("OpenAI Chat to Anthropic beta conversion is not yet implemented")
+		ctx.Request = request.ConvertOpenAIToAnthropicRequest(req, 4096)
+		return nil
 
 	case *responses.ResponseNewParams:
 		// OpenAI Responses to Anthropic beta conversion
-		// This conversion is not yet implemented
-		return fmt.Errorf("OpenAI Responses to Anthropic beta conversion is not yet implemented")
+		anthropicReq := request.ConvertOpenAIResponsesToAnthropicBetaRequest(*req, ctx.Config.MaxTokens)
+		ctx.Request = &anthropicReq
+		return nil
 
 	default:
 		return fmt.Errorf("unsupported request type for Anthropic beta conversion: %T", ctx.Request)
 	}
-}
-
-// GoogleRequest wraps Google API request parameters
-// Google's SDK uses separate parameters rather than a single request struct
-type GoogleRequest struct {
-	Model    string
-	Contents []*genai.Content
-	Config   *genai.GenerateContentConfig
 }
 
 // convertToGoogle converts the request to Google Gemini API format
@@ -252,7 +232,7 @@ func (t *BaseTransform) convertToGoogle(ctx *TransformContext) error {
 			req,
 			4096, // defaultMaxTokens - this could be made configurable
 		)
-		ctx.Request = &GoogleRequest{
+		ctx.Request = &protocol.GoogleRequest{
 			Model:    model,
 			Contents: contents,
 			Config:   config,
@@ -264,7 +244,7 @@ func (t *BaseTransform) convertToGoogle(ctx *TransformContext) error {
 			req,
 			4096, // defaultMaxTokens - this could be made configurable
 		)
-		ctx.Request = &GoogleRequest{
+		ctx.Request = &protocol.GoogleRequest{
 			Model:    model,
 			Contents: contents,
 			Config:   config,
@@ -276,7 +256,7 @@ func (t *BaseTransform) convertToGoogle(ctx *TransformContext) error {
 			req,
 			4096, // defaultMaxTokens
 		)
-		ctx.Request = &GoogleRequest{
+		ctx.Request = &protocol.GoogleRequest{
 			Model:    model,
 			Contents: contents,
 			Config:   config,
@@ -286,7 +266,7 @@ func (t *BaseTransform) convertToGoogle(ctx *TransformContext) error {
 		// OpenAI Responses API to Google conversion is not yet implemented
 		return fmt.Errorf("OpenAI Responses to Google conversion is not yet implemented")
 
-	case *GoogleRequest:
+	case *protocol.GoogleRequest:
 		// Already in Google format, no conversion needed
 		return nil
 
