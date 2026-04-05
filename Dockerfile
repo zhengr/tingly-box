@@ -20,6 +20,11 @@ RUN mkdir -p /usr/local/lib/node_modules/@openapitools/openapi-generator-cli/ver
     https://repo1.maven.org/maven2/org/openapitools/openapi-generator-cli/7.17.0/openapi-generator-cli-7.17.0.jar \
     -o /usr/local/lib/node_modules/@openapitools/openapi-generator-cli/versions/7.17.0.jar
 
+RUN if [ ! -f libs/go-genai/go.mod ]; then \
+      rm -rf libs/go-genai && \
+      git clone -b main --depth 1 https://github.com/google/go-genai.git libs/go-genai; \
+    fi
+
 # Set the Current Working Directory inside the container
 WORKDIR /app
 
