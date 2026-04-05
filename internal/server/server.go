@@ -94,8 +94,9 @@ type Server struct {
 	toolInterceptor *toolinterceptor.Interceptor
 
 	// guardrails engine (optional)
-	guardrailsEngine  guardrails.Guardrails
-	guardrailsHistory *serverguardrails.HistoryStore
+	guardrailsEngine            guardrails.Guardrails
+	guardrailsHasActivePolicies bool
+	guardrailsHistory           *serverguardrails.HistoryStore
 
 	// Protected credential aliasing needs a fast request-path lookup from
 	// scenario -> active mask credentials, plus ID -> credential metadata.
@@ -186,8 +187,15 @@ func (s *Server) initGuardrailsEngine() {
 
 	cfgPath, err := serverguardrails.FindGuardrailsConfig(s.config.ConfigDir)
 	if err != nil {
-		logrus.WithError(err).Warn("Guardrails config not found; guardrails disabled")
-		return
+		if !strings.Contains(err.Error(), "no guardrails config") {
+			logrus.WithError(err).Warn("Failed to locate guardrails config")
+			return
+		}
+		cfgPath, err = s.ensureDefaultGuardrailsConfig()
+		if err != nil {
+			logrus.WithError(err).Warn("Failed to create default guardrails config")
+			return
+		}
 	}
 
 	cfg, err := guardrails.LoadConfig(cfgPath)
@@ -204,6 +212,35 @@ func (s *Server) initGuardrailsEngine() {
 
 	s.setGuardrailsEngine(engine, "guardrails init")
 	logrus.Infof("Guardrails enabled with config: %s", cfgPath)
+}
+
+func (s *Server) ensureDefaultGuardrailsConfig() (string, error) {
+	if s == nil || s.config == nil || s.config.ConfigDir == "" {
+		return "", fmt.Errorf("config directory not set")
+	}
+
+	path := serverguardrails.GetGuardrailsConfigPath(s.config.ConfigDir)
+	enabled := true
+	cfg := guardrails.Config{
+		Groups: []guardrails.PolicyGroup{
+			{
+				ID:      guardrails.DefaultPolicyGroupID,
+				Name:    "Default",
+				Enabled: &enabled,
+			},
+		},
+	}
+
+	data, err := marshalGuardrailsConfig(cfg)
+	if err != nil {
+		return "", err
+	}
+	if err := writeFileAtomic(path, data); err != nil {
+		return "", err
+	}
+
+	logrus.Infof("Created default guardrails config: %s", path)
+	return path, nil
 }
 
 func (s *Server) guardrailsEnabled() bool {
@@ -344,6 +381,17 @@ func WithDebug(enabled bool) ServerOption {
 func WithMultiLogger(logger *pkgobs.MultiLogger) ServerOption {
 	return func(s *Server) {
 		s.multiLogger = logger
+	}
+}
+
+// WithTemplateManager allows TBE to inject a custom TemplateManager.
+// This follows the same pattern as WithAuthMiddleware for consistency.
+func WithTemplateManager(tm *data.TemplateManager) ServerOption {
+	return func(s *Server) {
+		s.templateManager = tm
+		if s.config != nil {
+			s.config.SetTemplateManager(tm)
+		}
 	}
 }
 
@@ -500,6 +548,20 @@ func NewServer(cfg *config.Config, opts ...ServerOption) *Server {
 	// Initialize health filter
 	healthFilter := typ.NewHealthFilter(healthMonitor)
 
+	// Initialize template manager first (needed for capacity config)
+	var templateURL string
+	if cfg.ProviderTemplateSource != "" {
+		templateURL = cfg.ProviderTemplateSource
+	} else {
+		templateURL = data.TemplateGitHubURL
+	}
+	templateManager := data.NewTemplateManager(templateURL)
+	if err := templateManager.Initialize(context.Background()); err != nil {
+		logrus.Debugf("Failed to fetch from GitHub, using embedded provider templates: %v", err)
+	} else {
+		logrus.Debugf("Provider templates initialized (version: %s)", templateManager.GetVersion())
+	}
+
 	// Initialize load balancer
 	loadBalancer := NewLoadBalancer(cfg, healthFilter)
 
@@ -559,13 +621,6 @@ func NewServer(cfg *config.Config, opts ...ServerOption) *Server {
 	// Set callback server manager (the server itself implements this interface)
 	server.oauthHandler.SetCallbackServerManager(server)
 
-	// Initialize template manager with GitHub URL for template sync
-	templateManager := data.NewTemplateManager(data.TemplateGitHubURL)
-	if err := templateManager.Initialize(context.Background()); err != nil {
-		logrus.Debugf("Failed to fetch from GitHub, using embedded provider templates: %v", err)
-	} else {
-		logrus.Debugf("Provider templates initialized (version: %s)", templateManager.GetVersion())
-	}
 	server.templateManager = templateManager
 
 	// Set template manager in config for model fetching fallback
