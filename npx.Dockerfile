@@ -22,10 +22,21 @@ RUN groupadd -r tingly && \
     useradd -r -g tingly tingly
 
 # Update npm to latest version (as root)
-RUN npm install -g npm@latest
+# RUN npm install -g npm@latest
 
 # Install tingly-box globally during build (as root)
-RUN npm install -g tingly-box@${TINGLY_VERSION}
+# RUN npm install -g tingly-box@${TINGLY_VERSION}
+# --- 本地编译核心步骤 ---
+# 1. 复制当前仓库源码
+COPY . .
+
+# 2. 更新 npm 并安装依赖、编译、本地全局安装
+# 使用 npm install -g . 将当前目录代码安装为全局命令 tingly-box
+RUN npm install -g npm@latest && \
+    npm install && \
+    npm run build && \
+    npm install -g .
+# -----------------------
 
 # Grant tingly user access to npm global directories and cache
 RUN chown -R tingly:tingly /usr/local/lib/node_modules /usr/local/bin /root/.npm
