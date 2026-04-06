@@ -26,7 +26,7 @@ RUN npm install -g npm@latest
 
 # Install tingly-box globally during build (as root)
 #RUN npm install -g tingly-box@${TINGLY_VERSION}
-RUN npm install -g tingly-box
+RUN npm install -g tingly-box@latest
 
 # Grant tingly user access to npm global directories and cache
 RUN chown -R tingly:tingly /usr/local/lib/node_modules /usr/local/bin /root/.npm
