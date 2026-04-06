@@ -19,7 +19,6 @@ import (
 	"github.com/tingly-dev/tingly-box/internal/constant"
 	"github.com/tingly-dev/tingly-box/internal/obs"
 	"github.com/tingly-dev/tingly-box/internal/protocol"
-	"github.com/tingly-dev/tingly-box/internal/quota"
 	"github.com/tingly-dev/tingly-box/internal/server/config"
 	"github.com/tingly-dev/tingly-box/internal/server/module/configapply"
 	"github.com/tingly-dev/tingly-box/internal/server/module/imbot"
@@ -72,10 +71,8 @@ func (s *Server) UseUIEndpoints(ctx context.Context) {
 	// Claude Code status line endpoints (no auth required) - register from claudecode module
 	// These must be registered before the /tingly/:scenario routes
 	var quotaMgr statusline.QuotaManager
-	if qm, ok := s.quotaManager.(interface {
-		GetQuota(ctx context.Context, providerUUID string) (*quota.ProviderUsage, error)
-	}); ok {
-		quotaMgr = qm
+	if s.quotaManager != nil {
+		quotaMgr = s.quotaManager
 	}
 	statusHandler := statusline.NewHandler(s.config, s.loadBalancer, statusline.NewCache(), quotaMgr)
 	statusline.RegisterRoutes(s.engine, statusHandler)
@@ -121,11 +118,9 @@ func (s *Server) UseUIEndpoints(ctx context.Context) {
 
 	// Provider quota API routes
 	if s.quotaManager != nil {
-		if qm, ok := s.quotaManager.(providerQuotaModule.Manager); ok {
-			quotaHandler := providerQuotaModule.NewHandler(qm, logrus.StandardLogger())
-			quotaHandler.RegisterRoutes(apiV1.Router)
-			logrus.Info("Provider quota API routes registered")
-		}
+		quotaHandler := providerQuotaModule.NewHandler(s.quotaManager, logrus.StandardLogger())
+		quotaHandler.RegisterRoutes(apiV1.Router)
+		logrus.Info("Provider quota API routes registered")
 	}
 
 	// Static files and templates - try embedded assets first, fallback to filesystem
@@ -594,6 +589,12 @@ func (s *Server) useWebAPIEndpoints(manager *swagger.RouteManager) {
 		swagger.WithResponseModel(gin.H{}),
 	)
 
+	// Health check endpoint (no auth required) - for health checks before login
+	apiAuth.GET("/info/health", s.GetHealthInfo,
+		swagger.WithTags("info"),
+		swagger.WithResponseModel(HealthInfoResponse{}),
+	)
+
 	// Create authenticated API group
 	apiV1 := manager.NewGroup("api", "v1", "")
 	apiV1.Router.Use(s.getUserAuthMiddleware())
@@ -616,12 +617,6 @@ func (s *Server) useWebAPIEndpoints(manager *swagger.RouteManager) {
 
 	apiV2 := manager.NewGroup("api", "v2", "")
 	apiV2.Router.Use(s.getUserAuthMiddleware())
-
-	// Health check endpoint
-	apiV1.GET("/info/health", s.GetHealthInfo,
-		swagger.WithTags("info"),
-		swagger.WithResponseModel(HealthInfoResponse{}),
-	)
 
 	apiV1.GET("/info/config", s.GetInfoConfig,
 		swagger.WithTags("info"),

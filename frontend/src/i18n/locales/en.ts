@@ -26,7 +26,7 @@ export default {
     "slogan": "Your Intelligence, Orchestrated.",
     "version": "version {{version}}",
     "nav": {
-      "home": "Scenario",
+      "home": "Agent",
       "settings": "Settings",
       "useOpenAI": "OpenAI SDK",
       "useAnthropic": "Anthropic SDK",
@@ -325,6 +325,17 @@ export default {
       "tokenGenerated": "Token generated successfully",
       "tokenGenerateFailed": "{{error}}"
     },
+    "proxy": {
+      "title": "Proxy Settings",
+      "respectEnvProxy": {
+        "label": "Respect Environment Proxy",
+        "helper": "When enabled, providers without explicit proxy configuration will use system proxy settings (HTTP_PROXY, HTTPS_PROXY, macOS system proxy, Clash, etc.)"
+      },
+      "notifications": {
+        "updateSuccess": "Proxy settings updated successfully",
+        "updateFailed": "Failed to update proxy settings: {{error}}"
+      }
+    },
     "accessControl": {
       "userToken": "User Token (Control Panel)",
       "modelToken": "Model Token (API Proxy)",
@@ -622,6 +633,12 @@ export default {
       "title": "Token Reset Successfully",
       "message": "Your new user token has been generated and saved to your session. Make sure to save it securely.",
       "saved": "I've Saved My Token"
+    }
+  },
+  "dashboard": {
+    "agentNav": {
+      "title": "Quick Start",
+      "description": "Select agent to start"
     }
   }
 };
